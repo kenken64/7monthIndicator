@@ -20,8 +20,12 @@ from binance.exceptions import BinanceAPIException
 from dotenv import load_dotenv
 import logging
 from typing import Dict, List, Optional, Tuple
+from datetime import datetime
 import warnings
 warnings.filterwarnings('ignore')
+
+# Import database module
+from database import get_database
 
 # Load environment variables
 load_dotenv()
@@ -108,6 +112,10 @@ class BinanceFuturesBot:
         self.position_size = 0
         self.position_side = None
         self.indicators = TechnicalIndicators()
+        
+        # Initialize database
+        self.db = get_database()
+        logger.info("Database initialized for signal and trade tracking")
         
         # Set margin type to CROSS and leverage
         try:
@@ -302,12 +310,32 @@ class BinanceFuturesBot:
         else:
             final_signal = 0  # Hold
         
-        return {
+        signal_data = {
             'signal': final_signal,
             'strength': signal_strength,
             'reasons': reasons,
             'raw_signals': signals
         }
+        
+        # Store signal in database with current price and indicators
+        current_price = df['close'].iloc[-1]
+        indicator_values = {
+            'rsi': indicators['rsi'].iloc[-1] if 'rsi' in indicators else 0,
+            'vwap': indicators['vwap'].iloc[-1] if 'vwap' in indicators else current_price,
+            'ema_9': indicators['ema_9'].iloc[-1] if 'ema_9' in indicators else current_price,
+            'ema_21': indicators['ema_21'].iloc[-1] if 'ema_21' in indicators else current_price,
+            'ema_50': indicators['ema_50'].iloc[-1] if 'ema_50' in indicators else current_price,
+            'ema_200': indicators['ema_200'].iloc[-1] if 'ema_200' in indicators else current_price,
+            'macd': indicators['macd'].iloc[-1] if 'macd' in indicators else 0,
+            'macd_signal': indicators['signal'].iloc[-1] if 'signal' in indicators else 0,
+            'macd_histogram': indicators['histogram'].iloc[-1] if 'histogram' in indicators else 0
+        }
+        
+        signal_data['indicators'] = indicator_values
+        signal_id = self.db.store_signal(self.symbol, current_price, signal_data)
+        signal_data['signal_id'] = signal_id
+        
+        return signal_data
     
     def calculate_position_size(self) -> float:
         """Calculate position size based on position percentage (like screenshot slider)"""
@@ -393,13 +421,29 @@ class BinanceFuturesBot:
             
             # Get updated position info for logging
             updated_position = self.get_position_info()
+            entry_price = updated_position.get('entry_price', 0)
+            liquidation_price = updated_position.get('liquidation_price', 0)
+            
+            # Store trade in database
+            trade_id = self.db.store_trade(
+                signal_id=signal_data.get('signal_id', 0),
+                symbol=self.symbol,
+                side=side,
+                quantity=position_size,
+                entry_price=entry_price,
+                leverage=self.leverage,
+                position_percentage=self.position_percentage,
+                order_id=order.get('orderId') if order else None,
+                liquidation_price=liquidation_price
+            )
             
             logger.info(f"✅ {side} Order Executed: {position_size} {self.symbol}")
-            logger.info(f"📊 Entry Price: ${updated_position.get('entry_price', 0):.4f}")
+            logger.info(f"📊 Entry Price: ${entry_price:.4f}")
             logger.info(f"🎯 Signal Reasons: {', '.join(signal_data['reasons'])}")
+            logger.info(f"💾 Trade stored in database (ID: {trade_id})")
             
-            if updated_position.get('liquidation_price', 0) > 0:
-                logger.info(f"⚠️ Liquidation Price: ${updated_position['liquidation_price']:.4f}")
+            if liquidation_price > 0:
+                logger.info(f"⚠️ Liquidation Price: ${liquidation_price:.4f}")
             
             return True
             
@@ -466,6 +510,14 @@ class BinanceFuturesBot:
         logger.info(f"🚀 Starting Binance Futures Bot for {self.symbol}")
         logger.info(f"⚡ Mode: CROSS {self.leverage}x | Position Size: {self.position_percentage}%")
         logger.info(f"🎯 Risk Management: {self.risk_percentage}% | Strategy: MACD + VWAP + EMAs + RSI")
+        logger.info(f"💾 Database: SQLite database tracking signals and trades")
+        
+        # Show recent performance on startup
+        performance = self.db.calculate_performance_metrics(self.symbol, 30)
+        if performance.get('total_trades', 0) > 0:
+            logger.info(f"📈 Last 30 days: {performance['total_trades']} trades, "
+                       f"{performance['win_rate']:.1f}% win rate, "
+                       f"${performance['total_pnl']:.2f} total PnL")
         
         while True:
             try:
