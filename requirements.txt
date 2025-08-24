@@ -1,0 +1,5 @@
+python-binance==1.0.19
+pandas==2.1.4
+numpy==1.24.3
+ta-lib==0.4.28
+python-dotenv==1.0.0

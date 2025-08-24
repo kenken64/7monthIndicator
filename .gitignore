@@ -1,0 +1,90 @@
+# Environment variables
+.env
+.env.local
+.env.production
+
+# API Keys and Secrets
+*.key
+*.secret
+api_keys.txt
+secrets.txt
+
+# Log files
+*.log
+logs/
+trading_bot.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data files
+data/
+*.csv
+*.json
+*.xlsx
+*.db
+*.sqlite
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Trading specific
+*.trade_history
+backtest_results/
+performance_data/
+market_data/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
