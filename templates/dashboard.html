@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Bot Dashboard</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .card { @apply bg-white rounded-lg shadow-md p-4 sm:p-6; }
+        .metric { @apply text-center p-3 sm:p-4 rounded-lg; }
+        .metric-positive { @apply bg-green-100 text-green-800; }
+        .metric-negative { @apply bg-red-100 text-red-800; }
+        .metric-neutral { @apply bg-blue-100 text-blue-800; }
+        .status-open { @apply bg-blue-500 text-white px-2 py-1 rounded text-xs; }
+        .status-closed { @apply bg-green-500 text-white px-2 py-1 rounded text-xs; }
+        .signal-buy { @apply bg-green-500 text-white px-2 py-1 rounded text-xs; }
+        .signal-sell { @apply bg-red-500 text-white px-2 py-1 rounded text-xs; }
+        .signal-hold { @apply bg-gray-500 text-white px-2 py-1 rounded text-xs; }
+        
+        /* Mobile optimizations */
+        @media (max-width: 640px) {
+            .mobile-compact { @apply text-sm; }
+            .mobile-hide { @apply hidden; }
+            .mobile-scroll { @apply overflow-x-auto; }
+            .mobile-stack { @apply flex-col space-y-2 space-x-0; }
+        }
+        
+        /* Chart responsiveness */
+        .chart-container { 
+            position: relative; 
+            height: 250px;
+        }
+        
+        @media (max-width: 640px) {
+            .chart-container { 
+                height: 200px;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center py-4 space-y-3 sm:space-y-0">
+                <h1 class="text-xl sm:text-2xl font-bold text-gray-900">🤖 Trading Bot Dashboard</h1>
+                <div class="flex items-center space-x-2 sm:space-x-4 w-full sm:w-auto mobile-stack sm:flex-row">
+                    <select id="symbolSelect" class="border border-gray-300 rounded px-2 py-1 sm:px-3 sm:py-2 text-sm sm:text-base flex-1 sm:flex-none">
+                        <option value="SUIUSDC">SUIUSDC</option>
+                    </select>
+                    <select id="timeRange" class="border border-gray-300 rounded px-2 py-1 sm:px-3 sm:py-2 text-sm sm:text-base flex-1 sm:flex-none">
+                        <option value="7">7 Days</option>
+                        <option value="30" selected>30 Days</option>
+                        <option value="90">90 Days</option>
+                    </select>
+                    <button id="refreshBtn" class="bg-blue-500 text-white px-3 py-1 sm:px-4 sm:py-2 rounded hover:bg-blue-600 text-sm sm:text-base flex-1 sm:flex-none">
+                        🔄 <span class="hidden sm:inline">Refresh</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- System Status -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="card metric metric-neutral">
+                <div class="text-2xl font-bold" id="totalSignals">-</div>
+                <div class="text-sm text-gray-600">Total Signals</div>
+            </div>
+            <div class="card metric metric-neutral">
+                <div class="text-2xl font-bold" id="totalTrades">-</div>
+                <div class="text-sm text-gray-600">Total Trades</div>
+            </div>
+            <div class="card metric metric-positive">
+                <div class="text-2xl font-bold" id="openTrades">-</div>
+                <div class="text-sm text-gray-600">Open Positions</div>
+            </div>
+            <div class="card metric metric-neutral">
+                <div class="text-sm font-bold" id="lastSignal">-</div>
+                <div class="text-sm text-gray-600">Last Signal</div>
+            </div>
+        </div>
+
+        <!-- RL Bot Live Status -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">🤖 RL Bot Status</h3>
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Status:</span>
+                        <span class="text-sm font-bold" id="rlBotStatus">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">PID:</span>
+                        <span class="text-xs font-mono" id="rlBotPid">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Last Update:</span>
+                        <span class="text-xs" id="rlBotLastUpdate">-</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">🧠 RL Decision</h3>
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Original Signal:</span>
+                        <span class="text-sm font-bold" id="originalSignal">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">RL Action:</span>
+                        <span class="text-sm font-bold" id="rlAction">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Final Decision:</span>
+                        <span class="text-sm font-bold" id="finalDecision">-</span>
+                    </div>
+                    <div class="mt-2 p-2 bg-gray-50 rounded text-xs" id="rlReason">
+                        RL reasoning will appear here...
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">📊 Live Market Data</h3>
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Price:</span>
+                        <span class="text-sm font-bold" id="livePrice">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">RSI:</span>
+                        <span class="text-sm font-bold" id="liveRSI">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">VWAP:</span>
+                        <span class="text-sm font-bold" id="liveVWAP">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Current Signal:</span>
+                        <span class="text-sm font-bold" id="liveSignal">-</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">💰 Live Position</h3>
+                <div class="space-y-2" id="livePosition">
+                    <div class="text-center text-gray-500 text-sm">Loading position...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent RL Decisions -->
+        <div class="card mb-8">
+            <h3 class="text-base sm:text-lg font-semibold mb-4">🔄 Recent RL Decisions (Last 5)</h3>
+            <div class="overflow-x-auto mobile-scroll">
+                <table class="min-w-full">
+                    <thead>
+                        <tr class="border-b">
+                            <th class="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                            <th class="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Original</th>
+                            <th class="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase mobile-hide">RL Action</th>
+                            <th class="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Final</th>
+                            <th class="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase mobile-hide">Confidence</th>
+                            <th class="px-2 sm:px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recentDecisions">
+                        <tr>
+                            <td colspan="6" class="px-2 sm:px-3 py-4 text-center text-gray-500 text-sm">Loading recent decisions...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Performance Metrics -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">📊 Performance Metrics</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span>Win Rate:</span>
+                        <span class="font-bold" id="winRate">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Total PnL:</span>
+                        <span class="font-bold" id="totalPnl">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Average Win:</span>
+                        <span class="font-bold text-green-600" id="avgWin">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Average Loss:</span>
+                        <span class="font-bold text-red-600" id="avgLoss">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Risk-Reward:</span>
+                        <span class="font-bold" id="riskReward">-</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">💰 Trade Breakdown</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span>Total Trades:</span>
+                        <span class="font-bold" id="performanceTotalTrades">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-green-600">Winning:</span>
+                        <span class="font-bold text-green-600" id="winningTrades">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-red-600">Losing:</span>
+                        <span class="font-bold text-red-600" id="losingTrades">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Max Loss:</span>
+                        <span class="font-bold text-red-600" id="maxLoss">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">🔵 Open Positions</h3>
+                <div id="openPositions" class="space-y-2">
+                    <div class="text-center text-gray-500">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Projected Balance Section -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">🔮 Projected Balance</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span>Current Balance:</span>
+                        <span class="font-bold text-blue-600" id="currentBalance">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>30-Day Conservative:</span>
+                        <span class="font-bold text-green-600" id="conservativeProjection">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>30-Day Realistic:</span>
+                        <span class="font-bold text-blue-600" id="realisticProjection">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>30-Day RL Enhanced:</span>
+                        <span class="font-bold text-purple-600" id="rlProjection">-</span>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-2">
+                        <span id="projectionNote">Based on historical performance</span>
+                    </div>
+                </div>
+            </div>
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">📊 Projection Scenarios</h3>
+                <canvas id="projectionChart" width="400" height="200"></canvas>
+            </div>
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">🎲 Risk Assessment</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span>Best Case (90 days):</span>
+                        <span class="font-bold text-green-600" id="bestCase">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Worst Case (90 days):</span>
+                        <span class="font-bold text-red-600" id="worstCase">-</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span>Expected Range:</span>
+                        <span class="font-bold text-gray-600" id="expectedRange">-</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                        <div class="bg-blue-600 h-2.5 rounded-full" style="width: 0%" id="confidenceBar"></div>
+                    </div>
+                    <div class="text-xs text-gray-500">
+                        <span id="confidenceText">Prediction confidence</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-8">
+            <div class="card">
+                <h3 class="text-base sm:text-lg font-semibold mb-4">📈 Cumulative PnL</h3>
+                <div class="chart-container">
+                    <canvas id="pnlChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3 class="text-base sm:text-lg font-semibold mb-4">🎯 Signal Strength</h3>
+                <div class="chart-container">
+                    <canvas id="signalChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Tables -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Recent Signals -->
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">🎯 Recent Signals</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Signal</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Strength</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="signalsTable" class="bg-white divide-y divide-gray-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Recent Trades -->
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">💰 Recent Trades</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Side</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Entry</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">PnL</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradesTable" class="bg-white divide-y divide-gray-200">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/dashboard.js"></script>
+</body>
+</html>

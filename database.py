@@ -26,6 +26,7 @@ class TradingDatabase:
         """Create database tables if they don't exist"""
         with self.get_connection() as conn:
             self.create_tables(conn)
+            self.migrate_schema(conn)
             logger.info(f"Database initialized: {self.db_path}")
     
     @contextmanager
@@ -43,6 +44,18 @@ class TradingDatabase:
         finally:
             conn.close()
     
+    def migrate_schema(self, conn):
+        """Migrate database schema to the latest version"""
+        try:
+            # Check if rl_enhanced column exists
+            cursor = conn.execute("PRAGMA table_info(signals)")
+            columns = [row['name'] for row in cursor.fetchall()]
+            if 'rl_enhanced' not in columns:
+                logger.info("Migrating database schema: adding 'rl_enhanced' column to signals table.")
+                conn.execute('ALTER TABLE signals ADD COLUMN rl_enhanced BOOLEAN DEFAULT FALSE')
+        except Exception as e:
+            logger.error(f"Error migrating database schema: {e}")
+    
     def create_tables(self, conn):
         """Create all necessary database tables"""
         
@@ -57,6 +70,7 @@ class TradingDatabase:
                 strength INTEGER NOT NULL,
                 reasons TEXT,  -- JSON array of signal reasons
                 indicators TEXT,  -- JSON object with all indicator values
+                rl_enhanced BOOLEAN DEFAULT FALSE,
                 executed BOOLEAN DEFAULT FALSE,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )
@@ -140,15 +154,16 @@ class TradingDatabase:
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute('''
-                    INSERT INTO signals (symbol, price, signal, strength, reasons, indicators)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO signals (symbol, price, signal, strength, reasons, indicators, rl_enhanced)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     symbol,
                     price,
                     signal_data.get('signal', 0),
                     signal_data.get('strength', 0),
                     json.dumps(signal_data.get('reasons', [])),
-                    json.dumps(signal_data.get('indicators', {}))
+                    json.dumps(signal_data.get('indicators', {})),
+                    signal_data.get('rl_enhanced', False)
                 ))
                 signal_id = cursor.lastrowid
                 logger.info(f"Signal stored: ID={signal_id}, Symbol={symbol}, Signal={signal_data.get('signal')}")
@@ -249,6 +264,28 @@ class TradingDatabase:
             logger.error(f"Error getting recent signals: {e}")
             return []
     
+    def get_recent_rl_signals(self, symbol: str = None, limit: int = 5) -> List[Dict]:
+        """Get recent RL-enhanced signals from the database"""
+        try:
+            with self.get_connection() as conn:
+                query = '''
+                    SELECT * FROM signals 
+                    WHERE (symbol = ? OR ? IS NULL) AND rl_enhanced = 1
+                    ORDER BY timestamp DESC 
+                    LIMIT ?
+                '''
+                cursor = conn.execute(query, (symbol, symbol, limit))
+                signals = []
+                for row in cursor.fetchall():
+                    signal = dict(row)
+                    signal['reasons'] = json.loads(signal['reasons']) if signal['reasons'] else []
+                    signal['indicators'] = json.loads(signal['indicators']) if signal['indicators'] else {}
+                    signals.append(signal)
+                return signals
+        except Exception as e:
+            logger.error(f"Error getting recent RL signals: {e}")
+            return []
+
     def get_recent_trades(self, symbol: str = None, limit: int = 10) -> List[Dict]:
         """Get recent trades from database"""
         try:

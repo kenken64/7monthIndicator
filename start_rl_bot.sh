@@ -1,14 +1,14 @@
 #!/bin/bash
-# Ubuntu startup script for Binance Futures Trading Bot
-# Starts the bot in background with logging and monitoring
+# Ubuntu startup script for RL-Enhanced Binance Futures Trading Bot
+# Starts the RL bot in background with logging and monitoring
 
 # Script configuration
-SCRIPT_NAME="7indicator-trading-bot"
-BOT_SCRIPT="trading_bot.py"
+SCRIPT_NAME="rl-enhanced-trading-bot"
+BOT_SCRIPT="rl_bot_ready.py"
 LOG_DIR="logs"
-PID_FILE="$LOG_DIR/bot.pid"
-MAIN_LOG="$LOG_DIR/bot_main.log"
-ERROR_LOG="$LOG_DIR/bot_error.log"
+PID_FILE="$LOG_DIR/rl_bot.pid"
+MAIN_LOG="$LOG_DIR/rl_bot_main.log"
+ERROR_LOG="$LOG_DIR/rl_bot_error.log"
 VENV_PATH="venv"
 
 # Colors for output
@@ -16,6 +16,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
 NC='\033[0m' # No Color
 
 # Function to print colored output
@@ -35,6 +36,10 @@ print_info() {
     echo -e "${BLUE}[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $1${NC}"
 }
 
+print_rl() {
+    echo -e "${PURPLE}[$(date '+%Y-%m-%d %H:%M:%S')] RL: $1${NC}"
+}
+
 # Create logs directory if it doesn't exist
 create_log_directory() {
     if [ ! -d "$LOG_DIR" ]; then
@@ -49,7 +54,7 @@ create_log_directory() {
             touch "$MAIN_LOG" "$ERROR_LOG"
             chmod 644 "$MAIN_LOG" "$ERROR_LOG"
             
-            print_info "Log files initialized:"
+            print_info "RL Bot log files initialized:"
             print_info "  Main log: $MAIN_LOG"
             print_info "  Error log: $ERROR_LOG"
         else
@@ -64,13 +69,13 @@ create_log_directory() {
         if [ ! -f "$MAIN_LOG" ]; then
             touch "$MAIN_LOG"
             chmod 644 "$MAIN_LOG"
-            print_info "Created main log file: $MAIN_LOG"
+            print_info "Created RL bot main log file: $MAIN_LOG"
         fi
         
         if [ ! -f "$ERROR_LOG" ]; then
             touch "$ERROR_LOG"
             chmod 644 "$ERROR_LOG"
-            print_info "Created error log file: $ERROR_LOG"
+            print_info "Created RL bot error log file: $ERROR_LOG"
         fi
     fi
     
@@ -82,7 +87,7 @@ create_log_directory() {
     fi
 }
 
-# Check if bot is already running
+# Check if RL bot is already running
 is_bot_running() {
     if [ -f "$PID_FILE" ]; then
         PID=$(cat "$PID_FILE")
@@ -97,9 +102,9 @@ is_bot_running() {
     fi
 }
 
-# Check system requirements
+# Check system requirements specific to RL bot
 check_requirements() {
-    print_info "Checking system requirements..."
+    print_info "Checking RL bot requirements..."
     
     # Check Python3
     if ! command -v python3 &> /dev/null; then
@@ -120,16 +125,48 @@ check_requirements() {
     # Check virtual environment
     create_virtual_environment
     
-    # Check if bot script exists
+    # Check if RL bot script exists
     if [ ! -f "$BOT_SCRIPT" ]; then
-        print_error "Bot script $BOT_SCRIPT not found"
+        print_error "RL bot script $BOT_SCRIPT not found"
+        print_info "Make sure rl_bot_ready.py exists in the current directory"
         exit 1
     fi
+    
+    # Check RL dependencies
+    check_rl_dependencies
     
     # Check .env file
     check_env_file
     
-    print_status "System requirements check passed"
+    print_status "RL bot requirements check passed"
+}
+
+# Check RL-specific dependencies
+check_rl_dependencies() {
+    print_rl "Checking RL system dependencies..."
+    
+    # Check if RL patch file exists
+    if [ ! -f "rl_patch.py" ]; then
+        print_error "RL patch file (rl_patch.py) not found"
+        print_info "This file is required for RL enhancement"
+        exit 1
+    fi
+    
+    # Check if RL model exists
+    if [ ! -f "rl_trading_model.pkl" ]; then
+        print_warning "RL model file (rl_trading_model.pkl) not found"
+        print_info "RL bot will work but without trained model benefits"
+    else
+        print_status "RL model file found"
+    fi
+    
+    # Check if lightweight RL exists
+    if [ ! -f "lightweight_rl.py" ]; then
+        print_error "Lightweight RL file (lightweight_rl.py) not found"
+        exit 1
+    fi
+    
+    print_rl "RL dependencies check passed"
 }
 
 # Check and validate .env file and API keys
@@ -181,19 +218,19 @@ create_env_template() {
 BINANCE_API_KEY=your_binance_api_key_here
 BINANCE_SECRET_KEY=your_binance_secret_key_here
 
-# Trading Configuration (Optional - uses config.py defaults if not set)
-# SYMBOL=SUIUSDC
-# LEVERAGE=50
-# POSITION_PERCENTAGE=51.0
-# RISK_PERCENTAGE=2.0
-# USE_TESTNET=true
+# RL Bot Configuration (Safer defaults)
+SYMBOL=SUIUSDC
+LEVERAGE=50
+POSITION_PERCENTAGE=2.0  # Much safer than 51%
+RISK_PERCENTAGE=1.5
+USE_TESTNET=false
 EOF
-    print_status "Basic .env template created"
+    print_status "Basic .env template created with RL-safe defaults"
 }
 
-# Validate Binance API keys
+# Validate Binance API keys for RL bot
 validate_api_keys() {
-    print_info "Validating Binance API configuration..."
+    print_info "Validating Binance API configuration for RL bot..."
     
     # Check if API keys are set and not default values
     if [ -z "$BINANCE_API_KEY" ] || [ "$BINANCE_API_KEY" = "your_binance_api_key_here" ]; then
@@ -229,9 +266,9 @@ validate_api_keys() {
     test_api_connection
 }
 
-# Test Binance API connection
+# Test Binance API connection for RL bot
 test_api_connection() {
-    print_info "Testing Binance API connection..."
+    print_info "Testing Binance API connection for RL bot..."
     
     # Activate virtual environment for API test
     source "$VENV_PATH/bin/activate" 2>/dev/null || {
@@ -239,8 +276,8 @@ test_api_connection() {
         return 0
     }
     
-    # Create a simple Python script to test API connection
-    cat > test_api.py << 'EOF'
+    # Create a simple Python script to test RL bot API connection
+    cat > test_rl_api.py << 'EOF'
 import os
 import sys
 from dotenv import load_dotenv
@@ -260,17 +297,41 @@ try:
     
     # Test connection with account info
     account = client.get_account()
-    print(f"SUCCESS: Connected to Binance {'Testnet' if testnet else 'Live'}")
+    print(f"SUCCESS: Connected to Binance {'Testnet' if testnet else 'Live'} for RL bot")
     print(f"Account Status: {account['accountType']}")
     
-    # Test futures account if not testnet
+    # Test futures account specifically for RL bot
     if not testnet:
         try:
             futures_account = client.futures_account()
-            print(f"Futures Account: Available Balance = {futures_account['availableBalance']} USDT")
+            balance = float(futures_account['availableBalance'])
+            print(f"Futures Account: Available Balance = {balance:.2f} USDT")
+            
+            # Check if balance is sufficient for RL bot (much lower requirements)
+            if balance < 10:
+                print("WARNING: Low balance - RL bot needs at least $10 USDT for safe operation")
+            else:
+                print(f"✅ Balance sufficient for RL bot (2% position sizing)")
+            
+            # Check SUIUSDC position
+            positions = client.futures_position_information(symbol='SUIUSDC')
+            for pos in positions:
+                if pos['symbol'] == 'SUIUSDC':
+                    amt = float(pos['positionAmt'])
+                    if abs(amt) > 0:
+                        print(f"Current SUIUSDC position: {amt}")
+                    break
+            
         except Exception as e:
             print(f"WARNING: Futures access issue: {str(e)}")
             print("Make sure 'Enable Futures' is enabled in your API key settings")
+    
+    # Test RL components
+    try:
+        from rl_patch import create_rl_enhanced_bot
+        print("✅ RL enhancement system available")
+    except ImportError as e:
+        print(f"WARNING: RL system not available: {e}")
     
 except ImportError:
     print("ERROR: python-binance not installed")
@@ -287,8 +348,8 @@ except Exception as e:
 EOF
     
     # Run the test
-    if python test_api.py 2>/dev/null; then
-        print_status "✅ Binance API connection test passed"
+    if python test_rl_api.py 2>/dev/null; then
+        print_status "✅ Binance API connection test passed for RL bot"
     else
         print_error "❌ Binance API connection test failed"
         print_warning "Your API keys may be incorrect or have insufficient permissions"
@@ -304,7 +365,7 @@ EOF
     fi
     
     # Clean up test file
-    rm -f test_api.py
+    rm -f test_rl_api.py
 }
 
 # Create virtual environment if needed
@@ -320,7 +381,7 @@ create_virtual_environment() {
             print_info "Upgrading pip in virtual environment..."
             python -m pip install --upgrade pip
             
-            print_status "Virtual environment ready"
+            print_status "Virtual environment ready for RL bot"
         else
             print_error "Failed to create virtual environment"
             print_info "Make sure python3-venv is installed: sudo apt install python3-venv"
@@ -351,9 +412,9 @@ create_virtual_environment() {
     fi
 }
 
-# Install dependencies
+# Install dependencies for RL bot
 install_dependencies() {
-    print_info "Installing/updating dependencies..."
+    print_info "Installing/updating RL bot dependencies..."
     
     # Activate virtual environment
     source "$VENV_PATH/bin/activate"
@@ -363,118 +424,100 @@ install_dependencies() {
         
         # Install requirements with progress
         if pip install -r requirements.txt; then
-            print_status "All dependencies installed successfully"
+            print_status "All RL bot dependencies installed successfully"
             
-            # Show installed packages
-            print_info "Installed packages:"
-            pip list | grep -E "(binance|pandas|numpy|ta-lib|python-dotenv|matplotlib|seaborn)" || true
+            # Show installed packages relevant to RL bot
+            print_info "Installed packages for RL bot:"
+            pip list | grep -E "(binance|pandas|numpy|scikit|python-dotenv)" || true
         else
             print_error "Failed to install some dependencies"
-            print_warning "You may need to install TA-Lib system dependencies first:"
-            print_info "  Ubuntu/Debian: sudo apt-get install build-essential"
-            print_info "  Then install TA-Lib manually if needed"
+            print_warning "RL bot may not function properly"
             exit 1
         fi
     else
         print_warning "requirements.txt not found"
-        print_info "Creating basic requirements.txt file..."
+        print_info "Creating basic requirements.txt file for RL bot..."
         cat > requirements.txt << EOF
 python-binance==1.0.19
 pandas==2.1.4
 numpy==1.24.3
-ta-lib==0.4.28
 python-dotenv==1.0.0
+scikit-learn==1.3.0
 matplotlib==3.8.2
 seaborn==0.13.0
 EOF
-        print_status "Basic requirements.txt created"
+        print_status "Basic RL bot requirements.txt created"
         install_dependencies  # Retry installation
     fi
 }
 
-# Install TA-Lib system dependencies if needed
-install_talib_dependencies() {
-    print_info "Checking TA-Lib system dependencies..."
-    
-    # Check if we're on Ubuntu/Debian
-    if command -v apt-get &> /dev/null; then
-        print_info "Detected apt package manager (Ubuntu/Debian)"
-        
-        # Check if build-essential is installed
-        if ! dpkg -l | grep -q build-essential; then
-            print_warning "build-essential not found, attempting to install..."
-            if sudo apt-get update && sudo apt-get install -y build-essential; then
-                print_status "build-essential installed successfully"
-            else
-                print_error "Failed to install build-essential"
-                print_info "Please run manually: sudo apt-get install build-essential"
-                return 1
-            fi
-        else
-            print_status "build-essential is already installed"
-        fi
-        
-        # Install other dependencies for TA-Lib
-        print_info "Installing additional dependencies for TA-Lib..."
-        sudo apt-get install -y wget curl
-        
-    # Check if we're on CentOS/RHEL/Fedora
-    elif command -v yum &> /dev/null || command -v dnf &> /dev/null; then
-        print_info "Detected Red Hat based system"
-        if command -v dnf &> /dev/null; then
-            sudo dnf groupinstall -y "Development Tools"
-            sudo dnf install -y wget curl
-        else
-            sudo yum groupinstall -y "Development Tools"
-            sudo yum install -y wget curl
-        fi
-    else
-        print_warning "Unknown package manager, please install build tools manually"
-    fi
-}
-
-# Start the trading bot
+# Start the RL trading bot
 start_bot() {
-    print_info "Starting $SCRIPT_NAME..."
+    print_rl "Starting $SCRIPT_NAME..."
     
     if is_bot_running; then
-        print_warning "Bot is already running (PID: $(cat $PID_FILE))"
+        print_warning "RL bot is already running (PID: $(cat $PID_FILE))"
         return 1
     fi
     
-    # Activate virtual environment and start bot
+    # Kill any other trading bots first
+    print_info "Checking for conflicting trading bot processes..."
+    if pgrep -f "trading_bot.py" > /dev/null; then
+        print_warning "Found running trading_bot.py - stopping it first"
+        pkill -f "trading_bot.py"
+        sleep 2
+    fi
+    
+    # Activate virtual environment and start RL bot
     source "$VENV_PATH/bin/activate"
     
-    # Start bot in background with nohup
+    print_rl "🚀 Launching RL-Enhanced Trading Bot..."
+    print_rl "🛡️ Safety Features: 2% position size, RL signal filtering, enhanced risk management"
+    
+    # Start RL bot in background with nohup
     nohup python3 "$BOT_SCRIPT" > "$MAIN_LOG" 2> "$ERROR_LOG" &
     BOT_PID=$!
     
     # Save PID to file
     echo $BOT_PID > "$PID_FILE"
     
-    # Wait a moment to check if bot started successfully
-    sleep 3
+    # Wait a moment to check if RL bot started successfully
+    sleep 5
     
     if ps -p $BOT_PID > /dev/null 2>&1; then
-        print_status "Bot started successfully (PID: $BOT_PID)"
+        print_status "🎉 RL bot started successfully (PID: $BOT_PID)"
+        print_rl "🤖 RL Enhancement: ACTIVE"
+        print_rl "🛡️ Position Size: 2.0% (vs 51% original)"
+        print_rl "📊 Risk Management: Enhanced with ML pattern recognition"
         print_info "Main log: $MAIN_LOG"
         print_info "Error log: $ERROR_LOG"
-        print_info "Use './start_bot.sh status' to check status"
-        print_info "Use './start_bot.sh stop' to stop the bot"
+        print_info "Use './start_rl_bot.sh status' to check RL bot status"
+        print_info "Use './start_rl_bot.sh stop' to stop the RL bot"
+        print_info "Use './start_rl_bot.sh logs' to view live logs"
+        
+        # Show initial status
+        sleep 2
+        print_info "Initial RL bot status check..."
+        tail -n 5 "$MAIN_LOG" 2>/dev/null || echo "Waiting for log output..."
+        
         return 0
     else
-        print_error "Bot failed to start. Check error log: $ERROR_LOG"
+        print_error "RL bot failed to start. Check error log: $ERROR_LOG"
+        if [ -f "$ERROR_LOG" ] && [ -s "$ERROR_LOG" ]; then
+            print_error "Recent errors:"
+            tail -n 10 "$ERROR_LOG"
+        fi
         rm -f "$PID_FILE"
         return 1
     fi
 }
 
-# Stop the trading bot
+# Stop the RL trading bot
 stop_bot() {
-    print_info "Stopping $SCRIPT_NAME..."
+    print_rl "Stopping $SCRIPT_NAME..."
     
     if ! is_bot_running; then
-        print_warning "Bot is not running"
+        print_warning "RL bot is not running"
         return 1
     fi
     
@@ -485,89 +528,117 @@ stop_bot() {
     sleep 5
     
     if ps -p $PID > /dev/null 2>&1; then
-        print_warning "Bot didn't stop gracefully, force killing..."
+        print_warning "RL bot didn't stop gracefully, force killing..."
         kill -9 $PID
     fi
     
     rm -f "$PID_FILE"
-    print_status "Bot stopped successfully"
+    print_status "🛑 RL bot stopped successfully"
 }
 
-# Show bot status
+# Show RL bot status with enhanced information
 show_status() {
-    print_info "Checking $SCRIPT_NAME status..."
+    print_rl "Checking $SCRIPT_NAME status..."
     
     if is_bot_running; then
         PID=$(cat "$PID_FILE")
         UPTIME=$(ps -o etime= -p $PID | tr -d ' ')
         MEMORY=$(ps -o rss= -p $PID | tr -d ' ')
-        print_status "Bot is running (PID: $PID, Uptime: $UPTIME, Memory: ${MEMORY}KB)"
+        CPU=$(ps -o %cpu= -p $PID | tr -d ' ')
+        print_status "🟢 RL bot is running (PID: $PID)"
+        print_info "⏱️  Uptime: $UPTIME"
+        print_info "💾 Memory: ${MEMORY}KB"
+        print_info "🏃 CPU: ${CPU}%"
         
-        # Show recent log entries
-        if [ -f "$MAIN_LOG" ]; then
-            print_info "Recent log entries:"
-            tail -n 10 "$MAIN_LOG"
-        fi
+        # Use built-in status command if available
+        print_rl "Getting RL bot internal status..."
+        source "$VENV_PATH/bin/activate" 2>/dev/null
+        python3 "$BOT_SCRIPT" status 2>/dev/null || {
+            print_warning "RL bot status command not available, showing logs instead"
+            
+            # Show recent log entries
+            if [ -f "$MAIN_LOG" ]; then
+                print_info "Recent RL bot log entries:"
+                tail -n 10 "$MAIN_LOG"
+            fi
+        }
     else
-        print_warning "Bot is not running"
+        print_warning "🔴 RL bot is not running"
         
         # Show recent error log if exists
         if [ -f "$ERROR_LOG" ] && [ -s "$ERROR_LOG" ]; then
-            print_error "Recent errors:"
+            print_error "Recent RL bot errors:"
             tail -n 5 "$ERROR_LOG"
         fi
+        
+        print_info "To start RL bot: ./start_rl_bot.sh start"
     fi
 }
 
-# View live logs
+# View live RL bot logs
 view_logs() {
     if [ -f "$MAIN_LOG" ]; then
-        print_info "Showing live logs (Ctrl+C to exit):"
+        print_rl "Showing live RL bot logs (Ctrl+C to exit):"
+        echo -e "${PURPLE}===============================================${NC}"
         tail -f "$MAIN_LOG"
     else
-        print_error "Log file not found: $MAIN_LOG"
+        print_error "RL bot log file not found: $MAIN_LOG"
+        print_info "Start the RL bot first: ./start_rl_bot.sh start"
     fi
 }
 
-# Restart the bot
+# Restart the RL bot
 restart_bot() {
-    print_info "Restarting $SCRIPT_NAME..."
+    print_rl "Restarting $SCRIPT_NAME..."
     stop_bot
-    sleep 2
+    sleep 3
     start_bot
 }
 
-# Show help
+# Show RL bot help
 show_help() {
-    echo -e "${BLUE}$SCRIPT_NAME Management Script${NC}"
+    echo -e "${PURPLE}🤖 RL-Enhanced Trading Bot Management Script${NC}"
+    echo ""
+    echo -e "${GREEN}🚀 Key Features:${NC}"
+    echo -e "${PURPLE}  • Reinforcement Learning signal filtering${NC}"
+    echo -e "${PURPLE}  • 2% position size (vs 51% original)${NC}"
+    echo -e "${PURPLE}  • Enhanced risk management${NC}"
+    echo -e "${PURPLE}  • Automatic position reconciliation${NC}"
+    echo -e "${PURPLE}  • ML pattern recognition${NC}"
     echo ""
     echo -e "${GREEN}Usage:${NC}"
-    echo "  ./start_bot.sh [command]"
+    echo "  ./start_rl_bot.sh [command]"
     echo ""
     echo -e "${GREEN}Commands:${NC}"
-    echo "  start     - Start the trading bot in background (auto-creates venv)"
-    echo "  stop      - Stop the trading bot"
-    echo "  restart   - Restart the trading bot"
-    echo "  status    - Show bot status and recent logs"
-    echo "  logs      - View live logs (Ctrl+C to exit)"
-    echo "  setup     - Initial setup: create venv and install dependencies"
-    echo "  test-api  - Test Binance API connection and validate keys"
-    echo "  install   - Install/update dependencies only"
+    echo "  start     - Start the RL bot in background (safer 2% positions)"
+    echo "  stop      - Stop the RL bot"
+    echo "  restart   - Restart the RL bot"
+    echo "  status    - Show RL bot status and live positions"
+    echo "  logs      - View live RL bot logs (Ctrl+C to exit)"
+    echo "  setup     - Initial setup: create venv and install RL dependencies"
+    echo "  test-api  - Test Binance API connection for RL bot"
+    echo "  install   - Install/update RL bot dependencies only"
     echo "  help      - Show this help message"
     echo ""
     echo -e "${GREEN}Examples:${NC}"
-    echo "  ./start_bot.sh setup     # First-time setup"
-    echo "  ./start_bot.sh test-api  # Test your API keys"
-    echo "  ./start_bot.sh start     # Start the bot (creates venv if needed)"
-    echo "  ./start_bot.sh status    # Check if bot is running"
-    echo "  ./start_bot.sh logs      # View live logs"
+    echo "  ./start_rl_bot.sh setup     # First-time RL bot setup"
+    echo "  ./start_rl_bot.sh test-api  # Test your API keys with RL bot"
+    echo "  ./start_rl_bot.sh start     # Start RL bot (much safer than original)"
+    echo "  ./start_rl_bot.sh status    # Check RL bot status and positions"
+    echo "  ./start_rl_bot.sh logs      # View live RL bot activity"
     echo ""
     echo -e "${GREEN}First Time Setup:${NC}"
-    echo "  1. ./start_bot.sh setup"
-    echo "  2. cp .env.example .env (or script will prompt you)"
-    echo "  3. Edit .env with your Binance API keys"
-    echo "  4. ./start_bot.sh test-api (verify configuration)"
-    echo "  5. ./start_bot.sh start"
+    echo "  1. ./start_rl_bot.sh setup"
+    echo "  2. Edit .env with your Binance API keys (safer defaults included)"
+    echo "  3. ./start_rl_bot.sh test-api (verify RL bot configuration)"
+    echo "  4. ./start_rl_bot.sh start"
+    echo ""
+    echo -e "${PURPLE}🛡️ RL Bot Safety Features:${NC}"
+    echo -e "${PURPLE}  • 25x smaller position sizes (2% vs 51%)${NC}"
+    echo -e "${PURPLE}  • ML-based signal filtering${NC}"
+    echo -e "${PURPLE}  • Automatic risk management${NC}"
+    echo -e "${PURPLE}  • Position reconciliation with Binance${NC}"
+    echo -e "${PURPLE}  • Historical failure pattern avoidance${NC}"
 }
 
 # Main script logic
@@ -577,7 +648,6 @@ main() {
     case "${1:-start}" in
         "start")
             check_requirements
-            install_talib_dependencies
             install_dependencies
             start_bot
             ;;
@@ -595,17 +665,16 @@ main() {
             ;;
         "install"|"setup")
             check_requirements
-            install_talib_dependencies
             install_dependencies
-            print_status "Setup complete! You can now:"
-            print_info "1. Copy .env.example to .env and add your API keys"
-            print_info "2. Run './start_bot.sh test-api' to verify your API keys"
-            print_info "3. Run './start_bot.sh start' to begin trading"
+            print_status "🎉 RL bot setup complete! You can now:"
+            print_info "1. Edit .env with your Binance API keys (safer 2% defaults included)"
+            print_info "2. Run './start_rl_bot.sh test-api' to verify your RL bot setup"
+            print_info "3. Run './start_rl_bot.sh start' to begin safer RL-enhanced trading"
             ;;
         "test-api"|"test")
             check_requirements
             check_env_file
-            print_status "API key validation complete!"
+            print_status "🎉 RL bot API key validation complete!"
             ;;
         "help"|"-h"|"--help")
             show_help

@@ -41,6 +41,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+# RL INTEGRATION - Added automatically
+try:
+    from rl_patch import create_rl_enhanced_bot
+    RL_ENHANCEMENT_ENABLED = True
+    rl_generator, rl_enhancer = create_rl_enhanced_bot()
+    logger.info("🤖 RL Enhancement: ACTIVATED")
+except ImportError:
+    RL_ENHANCEMENT_ENABLED = False
+    logger.warning("⚠️ RL Enhancement: NOT AVAILABLE")
+
+
 class TechnicalIndicators:
     """Calculate technical indicators for trading signals"""
     
@@ -496,6 +508,16 @@ class BinanceFuturesBot:
             logger.error(f"❌ Error placing TP/SL orders: {e}")
             return {'take_profit': False, 'stop_loss': False}
     
+    
+        # RL Risk Management Override
+        if RL_ENHANCEMENT_ENABLED:
+            # Much smaller position sizes based on RL recommendations
+            original_percentage = self.position_percentage
+            if hasattr(self, '_current_risk_level'):
+                risk_multipliers = {'MINIMAL': 0.25, 'LOW': 0.5, 'MEDIUM': 0.75, 'HIGH': 1.0}
+                self.position_percentage = min(2.0, original_percentage * risk_multipliers.get(self._current_risk_level, 0.5))
+                logger.info(f"🛡️ RL Position Size: {self.position_percentage}% (risk: {getattr(self, '_current_risk_level', 'UNKNOWN')})")
+
     def execute_trade(self, signal_data: Dict) -> bool:
         """Execute trade based on signal"""
         if signal_data['strength'] < 3:  # Minimum signal strength threshold

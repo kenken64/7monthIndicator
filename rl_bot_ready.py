@@ -1,0 +1,808 @@
+#!/usr/bin/env python3
+"""
+RL-Enhanced Trading Bot - Ready to Run
+Direct copy of original bot with RL integration
+"""
+
+import os
+import time
+import pandas as pd
+import numpy as np
+from binance.client import Client
+from binance.exceptions import BinanceAPIException
+from dotenv import load_dotenv
+import logging
+from typing import Dict, List, Optional, Tuple
+from datetime import datetime
+import warnings
+import argparse
+import sys
+warnings.filterwarnings('ignore')
+
+# Import RL enhancement
+try:
+    from rl_patch import create_rl_enhanced_bot
+    RL_ENHANCEMENT_ENABLED = True
+    rl_generator, rl_enhancer = create_rl_enhanced_bot()
+    print("🤖 RL Enhancement: ACTIVATED")
+except ImportError as e:
+    RL_ENHANCEMENT_ENABLED = False
+    print(f"⚠️ RL Enhancement: NOT AVAILABLE - {e}")
+
+# Import database module
+from database import get_database
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('trading_bot.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+class TechnicalIndicators:
+    """Calculate technical indicators for trading signals"""
+    
+    @staticmethod
+    def ema(data: pd.Series, period: int) -> pd.Series:
+        """Calculate Exponential Moving Average"""
+        return data.ewm(span=period).mean()
+    
+    @staticmethod
+    def rsi(data: pd.Series, period: int = 14) -> pd.Series:
+        """Calculate Relative Strength Index"""
+        delta = data.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        return 100 - (100 / (1 + rs))
+    
+    @staticmethod
+    def macd(data: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict[str, pd.Series]:
+        """Calculate MACD"""
+        exp1 = data.ewm(span=fast).mean()
+        exp2 = data.ewm(span=slow).mean()
+        macd_line = exp1 - exp2
+        signal_line = macd_line.ewm(span=signal).mean()
+        histogram = macd_line - signal_line
+        
+        return {
+            'macd': macd_line,
+            'macd_signal': signal_line,
+            'macd_histogram': histogram
+        }
+    
+    @staticmethod
+    def vwap(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
+        """Calculate Volume Weighted Average Price"""
+        typical_price = (high + low + close) / 3
+        return (typical_price * volume).cumsum() / volume.cumsum()
+
+class RLEnhancedBinanceFuturesBot:
+    """RL-Enhanced Binance Futures Trading Bot"""
+    
+    def __init__(self, symbol: str = 'SUIUSDC', leverage: int = 50, position_percentage: float = 2.0):
+        # API Setup
+        self.api_key = os.getenv('BINANCE_API_KEY')
+        self.secret_key = os.getenv('BINANCE_SECRET_KEY')
+        
+        if not self.api_key or not self.secret_key:
+            raise ValueError("Binance API credentials not found in environment variables")
+        
+        self.client = Client(self.api_key, self.secret_key, testnet=False)
+        
+        # Trading Parameters - MUCH SAFER DEFAULTS
+        self.symbol = symbol
+        self.leverage = leverage
+        self.position_percentage = position_percentage  # 2% instead of 51%!
+        self.take_profit_percent = 1.0  # 1% instead of 2%
+        self.stop_loss_percent = 1.5   # 1.5% instead of 3%
+        
+        # State tracking
+        self.position_side = None  # LONG, SHORT, or None
+        self.position_size = 0
+        self.entry_price = 0
+        
+        # Database
+        self.db = get_database()
+        
+        logger.info(f"🤖 RL-Enhanced Bot initialized for {symbol}")
+        logger.info(f"🛡️ SAFETY SETTINGS: {position_percentage}% position size (vs 51% original)")
+        logger.info(f"🎯 Risk Management: {self.take_profit_percent}% TP, {self.stop_loss_percent}% SL")
+    
+    def get_klines(self, interval: str = '5m', limit: int = 200) -> pd.DataFrame:
+        """Fetch kline data from Binance"""
+        try:
+            klines = self.client.futures_klines(
+                symbol=self.symbol,
+                interval=interval,
+                limit=limit
+            )
+            
+            df = pd.DataFrame(klines, columns=[
+                'timestamp', 'open', 'high', 'low', 'close', 'volume',
+                'close_time', 'quote_asset_volume', 'number_of_trades',
+                'taker_buy_base_asset_volume', 'taker_buy_quote_asset_volume', 'ignore'
+            ])
+            
+            # Convert to proper types
+            numeric_columns = ['open', 'high', 'low', 'close', 'volume']
+            for col in numeric_columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            
+            return df
+            
+        except BinanceAPIException as e:
+            logger.error(f"Error fetching kline data: {e}")
+            return pd.DataFrame()
+    
+    def calculate_indicators(self, df: pd.DataFrame) -> Dict:
+        """Calculate all technical indicators"""
+        if df.empty or len(df) < 50:
+            return {}
+        
+        indicators = {}
+        
+        # EMAs
+        indicators['ema_9'] = TechnicalIndicators.ema(df['close'], 9)
+        indicators['ema_21'] = TechnicalIndicators.ema(df['close'], 21)
+        indicators['ema_50'] = TechnicalIndicators.ema(df['close'], 50)
+        indicators['ema_200'] = TechnicalIndicators.ema(df['close'], 200)
+        
+        # RSI
+        indicators['rsi'] = TechnicalIndicators.rsi(df['close'])
+        
+        # MACD
+        macd_data = TechnicalIndicators.macd(df['close'])
+        indicators.update(macd_data)
+        
+        # VWAP
+        indicators['vwap'] = TechnicalIndicators.vwap(df['high'], df['low'], df['close'], df['volume'])
+        
+        return indicators
+    
+    def generate_signals(self, df: pd.DataFrame, indicators: Dict) -> Dict:
+        """RL-Enhanced signal generation"""
+        
+        # Get original signal using traditional logic
+        original_signal_data = self._generate_original_signals(df, indicators)
+        
+        # Apply RL enhancement if available
+        if RL_ENHANCEMENT_ENABLED:
+            try:
+                # Prepare indicators for RL
+                indicator_dict = {
+                    'price': df['close'].iloc[-1],
+                    'rsi': indicators['rsi'].iloc[-1],
+                    'macd': indicators['macd'].iloc[-1],
+                    'macd_histogram': indicators['macd_histogram'].iloc[-1],
+                    'vwap': indicators['vwap'].iloc[-1],
+                    'ema_9': indicators['ema_9'].iloc[-1],
+                    'ema_21': indicators['ema_21'].iloc[-1]
+                }
+                
+                # Get RL enhancement
+                enhanced = rl_generator(original_signal_data, indicator_dict)
+                
+                # Log the enhancement
+                logger.info(f"💹 Current SUIUSDC Price: ${df['close'].iloc[-1]:.4f}")
+                logger.info(f"🤖 RL Enhancement:")
+                logger.info(f"   Original: Signal={original_signal_data['signal']}, Strength={original_signal_data['strength']}")
+                logger.info(f"   Enhanced: Signal={enhanced['signal']}, Strength={enhanced['strength']}")
+                logger.info(f"   Reason: {enhanced['reason']}")
+                
+                # Store risk level for position sizing
+                self._current_risk_level = enhanced.get('risk_level', 'LOW')
+                
+                signal_data = {
+                    'signal': enhanced['signal'],
+                    'strength': enhanced['strength'],
+                    'reasons': [enhanced['reason']] + original_signal_data.get('reasons', []),
+                    'indicators': self._extract_current_indicators(indicators),
+                    'rl_enhanced': True
+                }
+                
+            except Exception as e:
+                logger.error(f"❌ RL Enhancement failed: {e}")
+                signal_data = original_signal_data
+        else:
+            logger.warning("⚠️ Running without RL enhancement - using traditional signals only")
+            signal_data = original_signal_data
+
+        # Store the signal in the database
+        signal_id = self.db.store_signal(
+            self.symbol,
+            df['close'].iloc[-1],
+            signal_data
+        )
+        signal_data['signal_id'] = signal_id
+        
+        return signal_data
+    
+    def _generate_original_signals(self, df: pd.DataFrame, indicators: Dict) -> Dict:
+        """Original signal generation logic"""
+        
+        signal = 0
+        strength = 0
+        reasons = []
+        
+        if len(df) < 50:
+            return {
+                'signal': 0,
+                'strength': 0,
+                'reasons': ['Insufficient data for analysis'],
+                'indicators': {}
+            }
+        
+        current_price = df['close'].iloc[-1]
+        
+        try:
+            # RSI Analysis
+            rsi = indicators['rsi'].iloc[-1]
+            if rsi < 30:
+                signal += 1
+                strength += 2
+                reasons.append(f"RSI oversold ({rsi:.1f})")
+            elif rsi > 70:
+                signal -= 1
+                strength += 2
+                reasons.append(f"RSI overbought ({rsi:.1f})")
+            else:
+                reasons.append(f"RSI neutral ({rsi:.1f})")
+            
+            # MACD Analysis
+            macd = indicators['macd'].iloc[-1]
+            macd_signal = indicators['macd_signal'].iloc[-1]
+            macd_histogram = indicators['macd_histogram'].iloc[-1]
+            
+            if macd > macd_signal and macd_histogram > 0:
+                signal += 1
+                strength += 1
+                reasons.append("MACD bullish crossover")
+            elif macd < macd_signal and macd_histogram < 0:
+                signal -= 1
+                strength += 1
+                reasons.append("MACD bearish crossover")
+            
+            # VWAP Analysis
+            vwap = indicators['vwap'].iloc[-1]
+            if current_price > vwap * 1.001:  # 0.1% above VWAP
+                signal += 1
+                reasons.append(f"Price above VWAP (+{((current_price/vwap-1)*100):.2f}%)")
+            elif current_price < vwap * 0.999:  # 0.1% below VWAP
+                signal -= 1
+                reasons.append(f"Price below VWAP ({((current_price/vwap-1)*100):.2f}%)")
+            
+            # EMA Trend Analysis
+            ema_9 = indicators['ema_9'].iloc[-1]
+            ema_21 = indicators['ema_21'].iloc[-1]
+            ema_50 = indicators['ema_50'].iloc[-1]
+            
+            if ema_9 > ema_21 > ema_50:
+                signal += 1
+                strength += 1
+                reasons.append("EMA bullish alignment (9>21>50)")
+            elif ema_9 < ema_21 < ema_50:
+                signal -= 1
+                strength += 1
+                reasons.append("EMA bearish alignment (9<21<50)")
+            
+        except Exception as e:
+            logger.error(f"Error in signal calculation: {e}")
+            return {
+                'signal': 0,
+                'strength': 0,
+                'reasons': ['Error in signal calculation'],
+                'indicators': {}
+            }
+        
+        # Normalize signal
+        signal = max(-1, min(1, signal))
+        
+        return {
+            'signal': signal,
+            'strength': min(strength, 5),
+            'reasons': reasons,
+            'indicators': self._extract_current_indicators(indicators)
+        }
+    
+    def _extract_current_indicators(self, indicators: Dict) -> Dict:
+        """Extract current indicator values for database storage"""
+        current_indicators = {}
+        for key, series in indicators.items():
+            if hasattr(series, 'iloc') and len(series) > 0:
+                current_indicators[key] = float(series.iloc[-1])
+        return current_indicators
+    
+    def execute_trade(self, signal_data: Dict, current_price: float) -> bool:
+        """Execute trade with RL-enhanced position sizing"""
+        
+        signal = signal_data['signal']
+        
+        if signal == 0:
+            logger.info("🛑 No trade signal - maintaining current position")
+            return False
+        
+        # RL Risk Management Override
+        if RL_ENHANCEMENT_ENABLED:
+            # Much smaller position sizes based on RL recommendations
+            original_percentage = self.position_percentage
+            if hasattr(self, '_current_risk_level'):
+                self.position_percentage = rl_enhancer.should_use_smaller_position({'risk_level': self._current_risk_level})
+                logger.info(f"🛡️ RL Position Size: {self.position_percentage * 100}% (risk: {self._current_risk_level})")
+        
+        try:
+            # Get account info
+            account_info = self.client.futures_account()
+            available_balance = 0.0
+            for asset in account_info['assets']:
+                if asset['asset'] == self.symbol.replace('SUI', ''):
+                    available_balance = float(asset['walletBalance'])
+                    break
+            
+            # Calculate position size (much smaller now!)
+            position_value = available_balance * self.position_percentage
+            position_size = (position_value * self.leverage) / current_price
+            
+            # Round to appropriate decimal places
+            position_size = round(position_size, 1)
+            
+            if position_size < 0.1:  # Minimum position size
+                logger.warning(f"⚠️ Position size too small: {position_size}")
+                return False
+            
+            # Determine trade direction
+            side = 'BUY' if signal > 0 else 'SELL'
+            
+            logger.info(f"🎯 RL-Enhanced Trade Execution:")
+            logger.info(f"   Direction: {side}")
+            logger.info(f"   Size: {position_size} {self.symbol.replace('USDC', '')}")
+            logger.info(f"   Value: ${position_value:.2f} ({self.position_percentage}% of ${available_balance:.2f})")
+            logger.info(f"   Leverage: {self.leverage}x")
+            
+            # Place order
+            order = self.client.futures_create_order(
+                symbol=self.symbol,
+                side=side,
+                type='MARKET',
+                quantity=position_size
+            )
+            
+            # Store in database
+            trade_id = self.db.store_trade(
+                signal_id=signal_data['signal_id'],
+                symbol=self.symbol,
+                side=side,
+                quantity=position_size,
+                entry_price=current_price,
+                leverage=self.leverage,
+                position_percentage=self.position_percentage,
+                order_id=order.get('orderId')
+            )
+            
+            logger.info(f"✅ RL-Enhanced trade executed: Order ID {order.get('orderId')}, DB Trade ID {trade_id}")
+            
+            # Update internal state
+            self.position_side = 'LONG' if side == 'BUY' else 'SHORT'
+            self.position_size = position_size
+            self.entry_price = current_price
+
+            # Set TP/SL
+            self.set_tp_sl(side, current_price, position_size)
+            
+            return True
+            
+        except BinanceAPIException as e:
+            logger.error(f"❌ Trade execution failed: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Unexpected error in trade execution: {e}")
+            return False
+
+    def set_tp_sl(self, side: str, entry_price: float, quantity: float):
+        """Set Take Profit and Stop Loss orders"""
+        try:
+            if side == 'BUY':
+                tp_price = round(entry_price * (1 + 0.08), 4)
+                sl_price = round(entry_price * (1 - 0.04), 4)
+                tp_side = 'SELL'
+                sl_side = 'SELL'
+            else: # SELL
+                tp_price = round(entry_price * (1 - 0.08), 4)
+                sl_price = round(entry_price * (1 + 0.04), 4)
+                tp_side = 'BUY'
+                sl_side = 'BUY'
+
+            # Take Profit Order
+            self.client.futures_create_order(
+                symbol=self.symbol,
+                side=tp_side,
+                type='TAKE_PROFIT_MARKET',
+                stopPrice=tp_price,
+                closePosition=True
+            )
+            logger.info(f"🟢 Take Profit set at ${tp_price:.4f}")
+
+            # Stop Loss Order
+            self.client.futures_create_order(
+                symbol=self.symbol,
+                side=sl_side,
+                type='STOP_MARKET',
+                stopPrice=sl_price,
+                closePosition=True
+            )
+            logger.info(f"🔴 Stop Loss set at ${sl_price:.4f}")
+
+        except BinanceAPIException as e:
+            logger.error(f"❌ Error setting TP/SL: {e}")
+        except Exception as e:
+            logger.error(f"❌ Unexpected error setting TP/SL: {e}")
+    
+    def get_position_info(self):
+        """Get current position information"""
+        try:
+            positions = self.client.futures_position_information(symbol=self.symbol)
+            
+            for position in positions:
+                if position['symbol'] == self.symbol:
+                    position_amt = float(position['positionAmt'])
+                    
+                    if abs(position_amt) > 0.001:  # Has position
+                        entry_price = float(position['entryPrice'])
+                        mark_price = float(position['markPrice'])
+                        unrealized_pnl = float(position['unRealizedProfit'])
+                        
+                        # Calculate percentage
+                        if entry_price > 0:
+                            percentage = ((mark_price - entry_price) / entry_price) * 100 * self.leverage
+                            if position_amt < 0:  # Short position
+                                percentage = -percentage
+                        else:
+                            percentage = 0
+                        
+                        return {
+                            'symbol': self.symbol,
+                            'side': 'LONG' if position_amt > 0 else 'SHORT',
+                            'size': abs(position_amt),
+                            'entry_price': entry_price,
+                            'mark_price': mark_price,
+                            'unrealized_pnl': unrealized_pnl,
+                            'percentage': percentage,
+                            'liquidation_price': float(position.get('liquidationPrice', 0))
+                        }
+            
+            return {'symbol': self.symbol, 'side': None, 'size': 0}
+            
+        except BinanceAPIException as e:
+            logger.error(f"Error getting position info: {e}")
+            return {'symbol': self.symbol, 'side': None, 'size': 0}
+    
+    def reconcile_positions(self):
+        """Reconcile database positions with actual Binance positions"""
+        try:
+            # Get live positions from Binance
+            positions = self.client.futures_position_information(symbol=self.symbol)
+            live_position_amt = 0
+            
+            for pos in positions:
+                if pos['symbol'] == self.symbol:
+                    live_position_amt = float(pos['positionAmt'])
+                    break
+            
+            # Get open trades from database
+            open_trades = self.db.get_open_trades(self.symbol)
+            db_position_amt = 0
+            
+            for trade in open_trades:
+                if trade['side'] == 'BUY':
+                    db_position_amt += trade['quantity']
+                else:  # SELL
+                    db_position_amt -= trade['quantity']
+            
+            # Check if positions match
+            if abs(live_position_amt) < 0.001 and len(open_trades) > 0:
+                # Position closed on Binance but still open in database
+                logger.info(f"🔄 Reconciling: Position closed on Binance but {len(open_trades)} open trades in database")
+                
+                # Get current price
+                ticker = self.client.get_symbol_ticker(symbol=self.symbol)
+                current_price = float(ticker['price'])
+                
+                # Close all open trades in database
+                self.update_open_trades_on_close(current_price)
+                
+                logger.info(f"✅ Reconciled {len(open_trades)} trades - marked as closed with current price ${current_price:.4f}")
+                
+            elif abs(abs(live_position_amt) - abs(db_position_amt)) > 0.001:
+                logger.warning(f"⚠️ Position mismatch: Binance={live_position_amt}, Database={db_position_amt}")
+                
+        except Exception as e:
+            logger.error(f"❌ Error reconciling positions: {e}")
+    
+    def update_open_trades_on_close(self, current_price):
+        """Update all open trades when position is closed externally"""
+        try:
+            open_trades = self.db.get_open_trades(self.symbol)
+            
+            for trade in open_trades:
+                # Calculate PnL
+                if trade['side'] == 'BUY':
+                    pnl = (current_price - trade['entry_price']) * trade['quantity']
+                else:  # SELL
+                    pnl = (trade['entry_price'] - current_price) * trade['quantity']
+                
+                # Calculate PnL percentage
+                pnl_percentage = (pnl / (trade['entry_price'] * trade['quantity'])) * 100
+                
+                # Update trade to closed
+                self.db.update_trade_exit(
+                    trade_id=trade['id'],
+                    exit_price=current_price,
+                    pnl=pnl,
+                    pnl_percentage=pnl_percentage,
+                    status='CLOSED'
+                )
+                
+                logger.info(f"📝 Trade {trade['id']}: {trade['side']} {trade['quantity']} @ ${trade['entry_price']:.4f} → ${current_price:.4f}, PnL: ${pnl:.2f} ({pnl_percentage:.2f}%)")
+                
+        except Exception as e:
+            logger.error(f"❌ Error updating open trades on close: {e}")
+    
+    def run(self, interval: int = 300):
+        """Main bot loop with RL enhancement"""
+        logger.info(f"🚀 Starting RL-Enhanced Binance Futures Bot for {self.symbol}")
+        logger.info(f"🛡️ SAFETY MODE: {self.position_percentage}% max position (vs 51% original)")
+        logger.info(f"🤖 RL Enhancement: {'ACTIVE' if RL_ENHANCEMENT_ENABLED else 'DISABLED'}")
+        logger.info(f"🎯 Risk Management: TP {self.take_profit_percent}% | SL {self.stop_loss_percent}%")
+        
+        while True:
+            try:
+                # Reconcile positions with Binance (if available)
+                if hasattr(self, 'reconcile_positions'):
+                    self.reconcile_positions()
+                
+                # Get position info
+                position_info = self.get_position_info()
+                
+                # Fetch market data
+                df = self.get_klines()
+                if df.empty:
+                    logger.error("❌ No market data received")
+                    time.sleep(interval)
+                    continue
+                
+                # Calculate indicators
+                indicators = self.calculate_indicators(df)
+                if not indicators:
+                    logger.warning("⚠️ Could not calculate indicators")
+                    time.sleep(interval)
+                    continue
+                
+                # Generate RL-enhanced signals
+                signal_data = self.generate_signals(df, indicators)
+                
+                # Current market info
+                current_price = df['close'].iloc[-1]
+                rsi = indicators['rsi'].iloc[-1] if 'rsi' in indicators else 0
+                vwap = indicators['vwap'].iloc[-1] if 'vwap' in indicators else current_price
+                
+                # Position display
+                if position_info['side']:
+                    pnl_emoji = "🟢" if position_info['unrealized_pnl'] > 0 else "🔴"
+                    logger.info(f"📍 Position: {position_info['side']} {position_info['size']:.1f}")
+                    logger.info(f"💰 PnL: {pnl_emoji} ${position_info['unrealized_pnl']:.2f} ({position_info['percentage']:.2f}%)")
+                else:
+                    logger.info("📍 Position: No open position")
+                
+                # Market status
+                logger.info(f"💹 {self.symbol}: ${current_price:.4f} | RSI: {rsi:.1f} | VWAP: ${vwap:.4f}")
+                
+                # Signal info
+                signal_emoji = "🟢" if signal_data['signal'] > 0 else "🔴" if signal_data['signal'] < 0 else "⚪"
+                signal_name = "BUY" if signal_data['signal'] > 0 else "SELL" if signal_data['signal'] < 0 else "HOLD"
+                logger.info(f"🎯 Signal: {signal_emoji} {signal_name} (Strength: {signal_data['strength']})")
+                
+                if signal_data.get('rl_enhanced'):
+                    logger.info("🤖 RL Enhancement: ACTIVE")
+                
+                # Check for RL-enhanced exit conditions
+                if RL_ENHANCEMENT_ENABLED and position_info['side']:
+                    position_data = {
+                        'entry_price': position_info['entry_price'],
+                        'side': position_info['side']
+                    }
+                    exit_decision = rl_enhancer.check_exit_conditions(position_data, current_price)
+                    
+                    if exit_decision['should_exit']:
+                        logger.info(f"🚪 RL Exit Signal: {exit_decision['reason']}")
+                        self.client.futures_cancel_all_open_orders(symbol=self.symbol)
+                        self.client.futures_create_order(
+                            symbol=self.symbol,
+                            side='BUY' if position_info['side'] == 'SHORT' else 'SELL',
+                            type='MARKET',
+                            quantity=position_info['size']
+                        )
+                        logger.info(f"✅ Position closed based on RL exit signal.")
+                
+                # Execute trades based on signals
+                if signal_data['signal'] != 0 and signal_data['strength'] > 0:
+                    if not position_info['side']:  # No current position
+                        logger.info(f"📈 Executing trade based on {signal_name} signal...")
+                        self.execute_trade(signal_data, current_price)
+                    else:
+                        logger.info(f"✅ Signal detected but a {position_info['side']} position for {self.symbol} is already open. No new trade will be executed.")
+                
+                # Log reasons
+                for reason in signal_data.get('reasons', []):
+                    logger.info(f"   • {reason}")
+                
+                logger.info(f"⏰ Next update in {interval//60} minutes...")
+                time.sleep(interval)
+                
+            except KeyboardInterrupt:
+                logger.info("👋 Bot stopped by user")
+                break
+            except Exception as e:
+                logger.error(f"❌ Unexpected error: {e}")
+                time.sleep(60)  # Wait 1 minute before retrying
+
+def main():
+    """Start the RL-Enhanced Trading Bot"""
+    try:
+        logger.info("🤖 Initializing RL-Enhanced Trading Bot...")
+        
+        # Create bot with much safer defaults
+        bot = RLEnhancedBinanceFuturesBot(
+            symbol='SUIUSDC',
+            leverage=50,
+            position_percentage=2.0  # 2% instead of 51%!
+        )
+        
+        # Run the bot
+        bot.run(interval=25)  # 25 seconds
+        
+    except KeyboardInterrupt:
+        logger.info("👋 Bot stopped by user")
+    except Exception as e:
+        logger.error(f"❌ Fatal error: {e}")
+
+def show_status():
+    """Show current bot status and position info"""
+    try:
+        # Check if bot is running
+        import subprocess
+        result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
+        is_running = 'rl_bot_ready.py' in result.stdout
+        
+        print("🤖 RL-Enhanced Trading Bot Status")
+        print("=" * 40)
+        print(f"Status: {'🟢 RUNNING' if is_running else '🔴 STOPPED'}")
+        
+        if is_running:
+            # Get process info
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if 'rl_bot_ready.py' in line and 'grep' not in line:
+                    parts = line.split()
+                    pid = parts[1]
+                    cpu = parts[2]
+                    mem = parts[3]
+                    print(f"PID: {pid} | CPU: {cpu}% | Memory: {mem}%")
+                    break
+        
+        # Check database connection
+        try:
+            from database import get_database
+            db = get_database()
+            print(f"Database: 🟢 CONNECTED")
+            
+            # Get position info
+            open_trades = db.get_open_trades('SUIUSDC')
+            print(f"Open Positions: {len(open_trades)}")
+            
+            for trade in open_trades:
+                # Get current price for PnL calculation
+                load_dotenv()
+                client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_SECRET_KEY'))
+                ticker = client.get_symbol_ticker(symbol='SUIUSDC')
+                current_price = float(ticker['price'])
+                
+                if trade['side'] == 'SELL':
+                    pnl = (trade['entry_price'] - current_price) * trade['quantity']
+                    pnl_pct = ((trade['entry_price'] - current_price) / trade['entry_price']) * 100
+                else:
+                    pnl = (current_price - trade['entry_price']) * trade['quantity']
+                    pnl_pct = ((current_price - trade['entry_price']) / trade['entry_price']) * 100
+                
+                color = "🟢" if pnl > 0 else "🔴"
+                print(f"  {color} {trade['side']} {trade['quantity']} @ ${trade['entry_price']:.4f}")
+                print(f"    Current: ${current_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:.2f}%)")
+                
+        except Exception as e:
+            print(f"Database: 🔴 ERROR - {e}")
+        
+        # Check RL system
+        try:
+            if RL_ENHANCEMENT_ENABLED:
+                print(f"RL System: 🟢 ACTIVE")
+                if os.path.exists('rl_trading_model.pkl'):
+                    print(f"RL Model: 🟢 LOADED")
+                else:
+                    print(f"RL Model: 🔴 MISSING")
+            else:
+                print(f"RL System: 🔴 DISABLED")
+        except:
+            print(f"RL System: 🔴 ERROR")
+        
+        # Log file info
+        if os.path.exists('trading_bot.log'):
+            size = os.path.getsize('trading_bot.log')
+            print(f"Log File: 🟢 {size} bytes")
+        else:
+            print(f"Log File: 🔴 NOT FOUND")
+            
+    except Exception as e:
+        print(f"❌ Status check failed: {e}")
+
+def show_logs(lines=20, follow=False):
+    """Show recent log entries"""
+    try:
+        if not os.path.exists('trading_bot.log'):
+            print("❌ Log file not found")
+            return
+            
+        if follow:
+            print("📜 Following logs (Ctrl+C to stop)...")
+            import subprocess
+            subprocess.run(['tail', '-f', 'trading_bot.log'])
+        else:
+            print(f"📜 Last {lines} log entries:")
+            print("=" * 50)
+            import subprocess
+            result = subprocess.run(['tail', f'-{lines}', 'trading_bot.log'], 
+                                  capture_output=True, text=True)
+            print(result.stdout)
+            
+    except KeyboardInterrupt:
+        print("\n👋 Log following stopped")
+    except Exception as e:
+        print(f"❌ Log display failed: {e}")
+
+def parse_arguments():
+    """Parse command line arguments"""
+    parser = argparse.ArgumentParser(description='RL-Enhanced Trading Bot')
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    
+    # Run command (default)
+    run_parser = subparsers.add_parser('run', help='Start the trading bot')
+    
+    # Status command
+    status_parser = subparsers.add_parser('status', help='Show bot status')
+    
+    # Logs command
+    logs_parser = subparsers.add_parser('logs', help='Show log entries')
+    logs_parser.add_argument('-n', '--lines', type=int, default=20, 
+                           help='Number of log lines to show (default: 20)')
+    logs_parser.add_argument('-f', '--follow', action='store_true', 
+                           help='Follow log output in real-time')
+    
+    return parser.parse_args()
+
+if __name__ == "__main__":
+    args = parse_arguments()
+    
+    if args.command == 'status':
+        show_status()
+    elif args.command == 'logs':
+        show_logs(args.lines, args.follow)
+    else:
+        # Default to running the bot
+        main()
