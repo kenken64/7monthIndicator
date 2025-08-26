@@ -5,6 +5,8 @@ Flask web application to display trading signals and performance metrics
 """
 
 import json
+import os
+import time
 from flask import Flask, render_template, jsonify, request
 from database import get_database
 from datetime import datetime, timedelta
@@ -524,6 +526,172 @@ def get_rl_decisions(symbol):
         })
     except Exception as e:
         logger.error(f"Error getting RL decisions: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/logs')
+def logs_page():
+    """Live logs streaming page"""
+    return render_template('logs.html')
+
+@app.route('/api/logs/stream')
+def stream_logs():
+    """API endpoint to stream live logs"""
+    from flask import Response
+    import time
+    import os
+    
+    def generate_logs():
+        # Keep track of last read position for each log file
+        log_files = {
+            'logs/rl_bot_error.log': 0,
+            'trading_bot.log': 0
+        }
+        
+        while True:
+            new_logs = []
+            
+            # Read new content from each log file
+            for log_file, last_pos in log_files.items():
+                if os.path.exists(log_file):
+                    try:
+                        with open(log_file, 'r') as f:
+                            f.seek(last_pos)
+                            new_content = f.read()
+                            if new_content:
+                                lines = new_content.strip().split('\n')
+                                for line in lines:
+                                    if line.strip():
+                                        new_logs.append({
+                                            'source': log_file,
+                                            'content': line,
+                                            'timestamp': time.time()
+                                        })
+                                log_files[log_file] = f.tell()
+                    except Exception as e:
+                        logger.error(f"Error reading {log_file}: {e}")
+            
+            # Send new logs if any
+            if new_logs:
+                for log_entry in new_logs:
+                    yield f"data: {json.dumps(log_entry)}\n\n"
+            
+            time.sleep(1)  # Check for new logs every second
+    
+    return Response(generate_logs(), mimetype='text/plain')
+
+@app.route('/api/logs/recent')
+def get_recent_logs():
+    """API endpoint to get recent logs"""
+    lines = request.args.get('lines', 50, type=int)
+    log_source = request.args.get('source', 'rl_bot', type=str)
+    
+    try:
+        recent_logs = []
+        
+        # Determine which log files to read based on source
+        if log_source == 'rl_bot':
+            log_files = ['logs/rl_bot_error.log', 'logs/rl_bot_main.log']
+        elif log_source == 'trading_bot':
+            log_files = ['trading_bot.log']
+        else:
+            log_files = ['logs/rl_bot_error.log', 'trading_bot.log']
+        
+        for log_file in log_files:
+            if os.path.exists(log_file):
+                try:
+                    with open(log_file, 'r') as f:
+                        file_lines = f.readlines()
+                        # Get the last N lines
+                        recent_lines = file_lines[-lines:] if len(file_lines) > lines else file_lines
+                        
+                        for line in recent_lines:
+                            line = line.strip()
+                            if line:
+                                recent_logs.append({
+                                    'source': log_file,
+                                    'content': line,
+                                    'timestamp': time.time()
+                                })
+                except Exception as e:
+                    logger.error(f"Error reading {log_file}: {e}")
+        
+        # Sort by timestamp (most recent first)
+        recent_logs.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'data': recent_logs[:lines]  # Limit to requested number of lines
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting recent logs: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/bot-pause', methods=['POST'])
+def toggle_bot_pause():
+    """API endpoint to pause/resume the RL bot"""
+    try:
+        action = request.json.get('action', 'toggle')
+        pause_file = 'bot_pause.flag'
+        
+        if action == 'pause' or (action == 'toggle' and not os.path.exists(pause_file)):
+            # Create pause file
+            with open(pause_file, 'w') as f:
+                f.write(f"Paused at {datetime.now().isoformat()}\n")
+            status = 'paused'
+            logger.info("🛑 Bot paused via dashboard")
+        else:
+            # Remove pause file
+            if os.path.exists(pause_file):
+                os.remove(pause_file)
+            status = 'running'
+            logger.info("▶️ Bot resumed via dashboard")
+        
+        return jsonify({
+            'success': True,
+            'status': status,
+            'message': f'Bot {status} successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error toggling bot pause: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/bot-pause-status')
+def get_bot_pause_status():
+    """API endpoint to get current pause status"""
+    try:
+        pause_file = 'bot_pause.flag'
+        is_paused = os.path.exists(pause_file)
+        
+        pause_info = {}
+        if is_paused:
+            try:
+                with open(pause_file, 'r') as f:
+                    pause_info['paused_at'] = f.read().strip()
+            except:
+                pause_info['paused_at'] = 'Unknown'
+        
+        return jsonify({
+            'success': True,
+            'data': {
+                'is_paused': is_paused,
+                'status': 'paused' if is_paused else 'running',
+                **pause_info
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting pause status: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

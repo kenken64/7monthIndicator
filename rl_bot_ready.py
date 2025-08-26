@@ -17,6 +17,8 @@ from datetime import datetime
 import warnings
 import argparse
 import sys
+import requests
+import json
 warnings.filterwarnings('ignore')
 
 # Import RL enhancement
@@ -45,6 +47,96 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+class TelegramNotifier:
+    """Handle Telegram notifications for trading signals"""
+    
+    def __init__(self):
+        self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+        self.chat_id = os.getenv('TELEGRAM_CHAT_ID', '@bnbfutura_bot')
+        self.enabled = bool(self.bot_token and self.bot_token.strip())
+        
+        if self.enabled:
+            logger.info(f"📱 Telegram notifications enabled for {self.chat_id}")
+        else:
+            logger.warning("📱 Telegram notifications disabled - no bot token provided")
+    
+    def send_message(self, message: str, parse_mode: str = 'HTML') -> bool:
+        """Send message to Telegram bot"""
+        if not self.enabled:
+            return False
+        
+        try:
+            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+            payload = {
+                'chat_id': self.chat_id,
+                'text': message,
+                'parse_mode': parse_mode,
+                'disable_web_page_preview': True
+            }
+            
+            response = requests.post(url, data=payload, timeout=10)
+            
+            if response.status_code == 200:
+                logger.info(f"📱 Telegram message sent successfully to {self.chat_id}")
+                return True
+            else:
+                error_msg = response.text
+                if "chat not found" in error_msg:
+                    logger.error(f"📱 Telegram Error: Chat '{self.chat_id}' not found")
+                    logger.error("💡 Please check: 1) Bot is added to the channel/group, 2) Chat ID is correct, 3) Bot has permission to send messages")
+                else:
+                    logger.error(f"📱 Telegram API error: {response.status_code} - {error_msg}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"📱 Failed to send Telegram message: {e}")
+            return False
+    
+    def send_signal_notification(self, signal_data: Dict, current_price: float, position_info: Dict = None) -> bool:
+        """Send RL signal notification to Telegram"""
+        if not self.enabled:
+            return False
+        
+        try:
+            # Signal emoji and name
+            signal = signal_data.get('signal', 0)
+            signal_emoji = "🟢" if signal > 0 else "🔴" if signal < 0 else "⚪"
+            signal_name = "BUY" if signal > 0 else "SELL" if signal < 0 else "HOLD"
+            
+            # RL enhancement status
+            rl_status = "🤖 RL Enhanced" if signal_data.get('rl_enhanced') else "📊 Traditional"
+            
+            # Position status
+            pos_status = ""
+            if position_info and position_info.get('side'):
+                pnl_emoji = "🟢" if position_info.get('unrealized_pnl', 0) > 0 else "🔴"
+                pos_status = f"\n📍 Current Position: {position_info['side']} {position_info.get('size', 0):.1f}"
+                pos_status += f"\n💰 PnL: {pnl_emoji} ${position_info.get('unrealized_pnl', 0):.2f}"
+            
+            # Create message
+            message = f"""<b>🚀 SUI/USDC RL Trading Signal</b>
+            
+{signal_emoji} <b>Signal: {signal_name}</b>
+💪 Strength: {signal_data.get('strength', 0)}/5
+💹 Price: ${current_price:.4f}
+{rl_status}
+{pos_status}
+
+📊 Analysis:"""
+            
+            # Add top reasons
+            reasons = signal_data.get('reasons', [])[:3]  # Top 3 reasons
+            for reason in reasons:
+                message += f"\n• {reason}"
+            
+            message += f"\n\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            
+            return self.send_message(message)
+            
+        except Exception as e:
+            logger.error(f"📱 Error creating signal notification: {e}")
+            return False
 
 class TechnicalIndicators:
     """Calculate technical indicators for trading signals"""
@@ -101,20 +193,51 @@ class RLEnhancedBinanceFuturesBot:
         self.symbol = symbol
         self.leverage = leverage
         self.position_percentage = position_percentage  # 2% instead of 51%!
-        self.take_profit_percent = 1.0  # 1% instead of 2%
-        self.stop_loss_percent = 1.5   # 1.5% instead of 3%
+        self.take_profit_percent = 15.0  # 15% profit target
+        self.stop_loss_percent = 5.0    # 5% loss limit
         
         # State tracking
         self.position_side = None  # LONG, SHORT, or None
         self.position_size = 0
         self.entry_price = 0
         
+        # Order ID tracking - to only close bot's own positions
+        self.bot_order_ids = set()  # Track order IDs created by this bot
+        self.position_order_id = None  # The order ID that created current position
+        
+        # Pause/Resume functionality
+        self.paused = False
+        self.pause_file = 'bot_pause.flag'
+        
         # Database
         self.db = get_database()
+        
+        # Telegram notifications
+        self.telegram = TelegramNotifier()
         
         logger.info(f"🤖 RL-Enhanced Bot initialized for {symbol}")
         logger.info(f"🛡️ SAFETY SETTINGS: {position_percentage}% position size (vs 51% original)")
         logger.info(f"🎯 Risk Management: {self.take_profit_percent}% TP, {self.stop_loss_percent}% SL")
+        
+        # Check for existing positions on startup
+        self.check_existing_positions_on_startup()
+        
+        # Send startup notification to Telegram
+        startup_message = f"""<b>🤖 RL Trading Bot Started</b>
+
+📊 Symbol: {symbol}
+🛡️ Position Size: {position_percentage}%
+⚡ Leverage: {leverage}x
+🎯 TP: {self.take_profit_percent}% | SL: {self.stop_loss_percent}%
+🤖 RL Enhancement: {'ACTIVE' if RL_ENHANCEMENT_ENABLED else 'DISABLED'}
+
+✅ Bot is now monitoring signals...
+⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"""
+        
+        try:
+            self.telegram.send_message(startup_message)
+        except Exception as e:
+            logger.error(f"📱 Startup notification error: {e}")
     
     def get_klines(self, interval: str = '5m', limit: int = 200) -> pd.DataFrame:
         """Fetch kline data from Binance"""
@@ -322,8 +445,26 @@ class RLEnhancedBinanceFuturesBot:
                 current_indicators[key] = float(series.iloc[-1])
         return current_indicators
     
+    def check_pause_status(self) -> bool:
+        """Check if bot is paused by looking for pause flag file"""
+        if os.path.exists(self.pause_file):
+            if not self.paused:
+                self.paused = True
+                logger.info("⏸️ Bot paused - signals will continue but no trades will be executed")
+            return True
+        else:
+            if self.paused:
+                self.paused = False
+                logger.info("▶️ Bot resumed - trade execution enabled")
+            return False
+    
     def execute_trade(self, signal_data: Dict, current_price: float) -> bool:
         """Execute trade with RL-enhanced position sizing"""
+        
+        # Check if bot is paused
+        if self.check_pause_status():
+            logger.info("⏸️ Bot is paused - skipping trade execution (signal still recorded)")
+            return False
         
         signal = signal_data['signal']
         
@@ -376,6 +517,13 @@ class RLEnhancedBinanceFuturesBot:
                 quantity=position_size
             )
             
+            # Track the order ID for this bot
+            order_id = order.get('orderId')
+            if order_id:
+                self.bot_order_ids.add(order_id)
+                self.position_order_id = order_id
+                logger.info(f"🔢 Tracking order ID: {order_id}")
+            
             # Store in database
             trade_id = self.db.store_trade(
                 signal_id=signal_data['signal_id'],
@@ -385,10 +533,10 @@ class RLEnhancedBinanceFuturesBot:
                 entry_price=current_price,
                 leverage=self.leverage,
                 position_percentage=self.position_percentage,
-                order_id=order.get('orderId')
+                order_id=order_id
             )
             
-            logger.info(f"✅ RL-Enhanced trade executed: Order ID {order.get('orderId')}, DB Trade ID {trade_id}")
+            logger.info(f"✅ RL-Enhanced trade executed: Order ID {order_id}, DB Trade ID {trade_id}")
             
             # Update internal state
             self.position_side = 'LONG' if side == 'BUY' else 'SHORT'
@@ -407,17 +555,39 @@ class RLEnhancedBinanceFuturesBot:
             logger.error(f"❌ Unexpected error in trade execution: {e}")
             return False
 
+    def get_tp_sl_prices(self):
+        """Get current Take Profit and Stop Loss prices from open orders"""
+        try:
+            open_orders = self.client.futures_get_open_orders(symbol=self.symbol)
+            tp_price = None
+            sl_price = None
+            
+            for order in open_orders:
+                if order['type'] == 'TAKE_PROFIT_MARKET':
+                    tp_price = float(order['stopPrice'])
+                elif order['type'] == 'STOP_MARKET':
+                    sl_price = float(order['stopPrice'])
+            
+            return tp_price, sl_price
+            
+        except BinanceAPIException as e:
+            logger.error(f"Error getting TP/SL prices: {e}")
+            return None, None
+        except Exception as e:
+            logger.error(f"Unexpected error getting TP/SL prices: {e}")
+            return None, None
+
     def set_tp_sl(self, side: str, entry_price: float, quantity: float):
         """Set Take Profit and Stop Loss orders"""
         try:
             if side == 'BUY':
-                tp_price = round(entry_price * (1 + 0.08), 4)
-                sl_price = round(entry_price * (1 - 0.04), 4)
+                tp_price = round(entry_price * 1.15, 4)  # 15% profit (85% -> 115%)
+                sl_price = round(entry_price * 0.95, 4)  # 5% loss (95%)
                 tp_side = 'SELL'
                 sl_side = 'SELL'
             else: # SELL
-                tp_price = round(entry_price * (1 - 0.08), 4)
-                sl_price = round(entry_price * (1 + 0.04), 4)
+                tp_price = round(entry_price * 0.85, 4)  # 15% profit (85%)
+                sl_price = round(entry_price * 1.05, 4)  # 5% loss (105%)
                 tp_side = 'BUY'
                 sl_side = 'BUY'
 
@@ -446,8 +616,56 @@ class RLEnhancedBinanceFuturesBot:
         except Exception as e:
             logger.error(f"❌ Unexpected error setting TP/SL: {e}")
     
+    def can_close_position(self) -> bool:
+        """Check if the bot can close the current position (only if it was opened by this bot)"""
+        if not self.position_order_id:
+            logger.info("🚫 No position order ID tracked - assuming position not opened by bot")
+            return False
+        
+        if self.position_order_id not in self.bot_order_ids:
+            logger.info(f"🚫 Position order ID {self.position_order_id} not in bot's tracked orders")
+            return False
+        
+        return True
+    
+    def clear_position_tracking(self):
+        """Clear position tracking when position is closed"""
+        if self.position_order_id:
+            logger.info(f"🗑️ Clearing tracking for order ID: {self.position_order_id}")
+            self.position_order_id = None
+        
+        # Reset internal state
+        self.position_side = None
+        self.position_size = 0
+        self.entry_price = 0
+    
+    def check_existing_positions_on_startup(self):
+        """Check for existing positions on startup and warn if they exist"""
+        try:
+            positions = self.client.futures_position_information(symbol=self.symbol)
+            
+            for position in positions:
+                if position['symbol'] == self.symbol:
+                    position_amt = float(position['positionAmt'])
+                    
+                    if abs(position_amt) > 0.001:  # Has existing position
+                        entry_price = float(position['entryPrice'])
+                        mark_price = float(position['markPrice'])
+                        unrealized_pnl = float(position['unRealizedProfit'])
+                        side = 'LONG' if position_amt > 0 else 'SHORT'
+                        
+                        logger.warning(f"⚠️ EXISTING POSITION DETECTED ON STARTUP:")
+                        logger.warning(f"   {side} {abs(position_amt)} @ ${entry_price:.4f}")
+                        logger.warning(f"   Current: ${mark_price:.4f} | PnL: ${unrealized_pnl:.2f}")
+                        logger.warning(f"   🚫 Bot will NOT close this position - it was not opened by this bot")
+                        logger.warning(f"   💡 If you want the bot to manage this position, please close it manually first")
+                        break
+                        
+        except Exception as e:
+            logger.error(f"❌ Error checking existing positions on startup: {e}")
+    
     def get_position_info(self):
-        """Get current position information"""
+        """Get current position information with TP/SL prices"""
         try:
             positions = self.client.futures_position_information(symbol=self.symbol)
             
@@ -468,6 +686,9 @@ class RLEnhancedBinanceFuturesBot:
                         else:
                             percentage = 0
                         
+                        # Get TP/SL prices from open orders
+                        tp_price, sl_price = self.get_tp_sl_prices()
+                        
                         return {
                             'symbol': self.symbol,
                             'side': 'LONG' if position_amt > 0 else 'SHORT',
@@ -476,7 +697,9 @@ class RLEnhancedBinanceFuturesBot:
                             'mark_price': mark_price,
                             'unrealized_pnl': unrealized_pnl,
                             'percentage': percentage,
-                            'liquidation_price': float(position.get('liquidationPrice', 0))
+                            'liquidation_price': float(position.get('liquidationPrice', 0)),
+                            'take_profit_price': tp_price,
+                            'stop_loss_price': sl_price
                         }
             
             return {'symbol': self.symbol, 'side': None, 'size': 0}
@@ -519,6 +742,9 @@ class RLEnhancedBinanceFuturesBot:
                 # Close all open trades in database
                 self.update_open_trades_on_close(current_price)
                 
+                # Clear position tracking since position was closed externally
+                self.clear_position_tracking()
+                
                 logger.info(f"✅ Reconciled {len(open_trades)} trades - marked as closed with current price ${current_price:.4f}")
                 
             elif abs(abs(live_position_amt) - abs(db_position_amt)) > 0.001:
@@ -556,15 +782,145 @@ class RLEnhancedBinanceFuturesBot:
         except Exception as e:
             logger.error(f"❌ Error updating open trades on close: {e}")
     
+    def close_position_on_hold_signal(self, position_info: Dict, current_price: float):
+        """Close current position when HOLD signal is detected - only close if PnL is negative and bot opened the position"""
+        try:
+            if not position_info['side']:
+                return  # No position to close
+            
+            # Check if bot can close this position (only if it was opened by bot)
+            if not self.can_close_position():
+                logger.info(f"🚫 HOLD signal detected but cannot close {position_info['side']} position - not opened by this bot")
+                return False
+            
+            # Check PnL
+            unrealized_pnl = position_info.get('unrealized_pnl', 0)
+            
+            if unrealized_pnl > 0:
+                logger.info(f"🛑 HOLD signal detected - keeping {position_info['side']} position open (positive PnL: ${unrealized_pnl:.2f})")
+                return False
+            
+            logger.info(f"🛑 HOLD signal detected - closing {position_info['side']} position (negative PnL: ${unrealized_pnl:.2f})")
+            
+            # Cancel all existing orders (TP/SL)
+            try:
+                self.client.futures_cancel_all_open_orders(symbol=self.symbol)
+                logger.info("❌ Cancelled all existing orders (TP/SL)")
+            except BinanceAPIException as e:
+                logger.warning(f"⚠️ Could not cancel orders: {e}")
+            
+            # Determine the closing side (opposite of current position)
+            close_side = 'SELL' if position_info['side'] == 'LONG' else 'BUY'
+            
+            # Execute market order to close position
+            close_order = self.client.futures_create_order(
+                symbol=self.symbol,
+                side=close_side,
+                type='MARKET',
+                quantity=position_info['size']
+            )
+            
+            # Update database trades
+            self.update_open_trades_on_close(current_price)
+            
+            logger.info(f"✅ Position closed due to HOLD signal with negative PnL: Order ID {close_order.get('orderId')}")
+            logger.info(f"💰 Final PnL: ${unrealized_pnl:.2f} ({position_info.get('percentage', 0):.2f}%)")
+            
+            # Clear position tracking
+            self.clear_position_tracking()
+            
+            return True
+            
+        except BinanceAPIException as e:
+            logger.error(f"❌ Failed to close position on HOLD signal: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Unexpected error closing position on HOLD: {e}")
+            return False
+    
+    def close_position_on_opposite_signal(self, position_info: Dict, signal: int, current_price: float):
+        """Close position when signal flips to opposite direction - only close if PnL is negative and bot opened the position"""
+        try:
+            if not position_info['side']:
+                return False  # No position to close
+            
+            # Determine if signal is opposite to current position
+            is_opposite_signal = False
+            if position_info['side'] == 'LONG' and signal < 0:  # LONG position with SELL signal
+                is_opposite_signal = True
+            elif position_info['side'] == 'SHORT' and signal > 0:  # SHORT position with BUY signal
+                is_opposite_signal = True
+            
+            if not is_opposite_signal:
+                return False  # Signal is not opposite
+            
+            # Check if bot can close this position (only if it was opened by bot)
+            if not self.can_close_position():
+                signal_name = "SELL" if signal < 0 else "BUY"
+                logger.info(f"🚫 {signal_name} signal detected but cannot close {position_info['side']} position - not opened by this bot")
+                return False
+            
+            # Check PnL
+            unrealized_pnl = position_info.get('unrealized_pnl', 0)
+            signal_name = "SELL" if signal < 0 else "BUY"
+            
+            if unrealized_pnl > 0:
+                logger.info(f"🔄 {signal_name} signal detected with open {position_info['side']} position - keeping position open (positive PnL: ${unrealized_pnl:.2f})")
+                return False
+            
+            logger.info(f"🔄 {signal_name} signal detected with open {position_info['side']} position - closing due to negative PnL: ${unrealized_pnl:.2f}")
+            
+            # Cancel all existing orders (TP/SL)
+            try:
+                self.client.futures_cancel_all_open_orders(symbol=self.symbol)
+                logger.info("❌ Cancelled all existing orders (TP/SL)")
+            except BinanceAPIException as e:
+                logger.warning(f"⚠️ Could not cancel orders: {e}")
+            
+            # Determine the closing side (opposite of current position)
+            close_side = 'SELL' if position_info['side'] == 'LONG' else 'BUY'
+            
+            # Execute market order to close position
+            close_order = self.client.futures_create_order(
+                symbol=self.symbol,
+                side=close_side,
+                type='MARKET',
+                quantity=position_info['size']
+            )
+            
+            # Update database trades
+            self.update_open_trades_on_close(current_price)
+            
+            logger.info(f"✅ Position closed due to opposite {signal_name} signal with negative PnL: Order ID {close_order.get('orderId')}")
+            logger.info(f"💰 Final PnL: ${unrealized_pnl:.2f} ({position_info.get('percentage', 0):.2f}%)")
+            
+            # Clear position tracking
+            self.clear_position_tracking()
+            
+            return True
+            
+        except BinanceAPIException as e:
+            logger.error(f"❌ Failed to close position on opposite signal: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Unexpected error closing position on opposite signal: {e}")
+            return False
+    
     def run(self, interval: int = 300):
         """Main bot loop with RL enhancement"""
         logger.info(f"🚀 Starting RL-Enhanced Binance Futures Bot for {self.symbol}")
         logger.info(f"🛡️ SAFETY MODE: {self.position_percentage}% max position (vs 51% original)")
         logger.info(f"🤖 RL Enhancement: {'ACTIVE' if RL_ENHANCEMENT_ENABLED else 'DISABLED'}")
         logger.info(f"🎯 Risk Management: TP {self.take_profit_percent}% | SL {self.stop_loss_percent}%")
+        logger.info(f"⏸️ Pause Control: Create '{self.pause_file}' file to pause trade execution")
         
         while True:
             try:
+                # Check pause status
+                paused = self.check_pause_status()
+                if paused:
+                    logger.info("⏸️ Bot paused - generating signals only, no trade execution")
+                
                 # Reconcile positions with Binance (if available)
                 if hasattr(self, 'reconcile_positions'):
                     self.reconcile_positions()
@@ -594,11 +950,31 @@ class RLEnhancedBinanceFuturesBot:
                 rsi = indicators['rsi'].iloc[-1] if 'rsi' in indicators else 0
                 vwap = indicators['vwap'].iloc[-1] if 'vwap' in indicators else current_price
                 
+                # Send Telegram notification for significant signals
+                if signal_data.get('signal', 0) != 0 and signal_data.get('strength', 0) > 0:
+                    try:
+                        self.telegram.send_signal_notification(signal_data, current_price, position_info)
+                    except Exception as e:
+                        logger.error(f"📱 Telegram notification error: {e}")
+                
                 # Position display
                 if position_info['side']:
                     pnl_emoji = "🟢" if position_info['unrealized_pnl'] > 0 else "🔴"
-                    logger.info(f"📍 Position: {position_info['side']} {position_info['size']:.1f}")
+                    can_close_emoji = "✅" if self.can_close_position() else "🚫"
+                    logger.info(f"📍 Position: {position_info['side']} {position_info['size']:.1f} {can_close_emoji}")
                     logger.info(f"💰 PnL: {pnl_emoji} ${position_info['unrealized_pnl']:.2f} ({position_info['percentage']:.2f}%)")
+                    
+                    # Show order tracking status
+                    if self.position_order_id:
+                        logger.info(f"🔢 Bot Order ID: {self.position_order_id} (Bot can manage this position)")
+                    else:
+                        logger.info(f"🚫 No bot order ID tracked (Bot will NOT close this position)")
+                    
+                    # Display TP/SL prices if available
+                    if position_info.get('take_profit_price') or position_info.get('stop_loss_price'):
+                        tp_text = f"${position_info['take_profit_price']:.4f}" if position_info.get('take_profit_price') else "Not set"
+                        sl_text = f"${position_info['stop_loss_price']:.4f}" if position_info.get('stop_loss_price') else "Not set"
+                        logger.info(f"🎯 TP: {tp_text} | SL: {sl_text}")
                 else:
                     logger.info("📍 Position: No open position")
                 
@@ -608,37 +984,60 @@ class RLEnhancedBinanceFuturesBot:
                 # Signal info
                 signal_emoji = "🟢" if signal_data['signal'] > 0 else "🔴" if signal_data['signal'] < 0 else "⚪"
                 signal_name = "BUY" if signal_data['signal'] > 0 else "SELL" if signal_data['signal'] < 0 else "HOLD"
-                logger.info(f"🎯 Signal: {signal_emoji} {signal_name} (Strength: {signal_data['strength']})")
+                pause_status = " (PAUSED)" if paused else ""
+                logger.info(f"🎯 Signal: {signal_emoji} {signal_name} (Strength: {signal_data['strength']}){pause_status}")
                 
                 if signal_data.get('rl_enhanced'):
                     logger.info("🤖 RL Enhancement: ACTIVE")
                 
                 # Check for RL-enhanced exit conditions
                 if RL_ENHANCEMENT_ENABLED and position_info['side']:
-                    position_data = {
-                        'entry_price': position_info['entry_price'],
-                        'side': position_info['side']
-                    }
-                    exit_decision = rl_enhancer.check_exit_conditions(position_data, current_price)
-                    
-                    if exit_decision['should_exit']:
-                        logger.info(f"🚪 RL Exit Signal: {exit_decision['reason']}")
-                        self.client.futures_cancel_all_open_orders(symbol=self.symbol)
-                        self.client.futures_create_order(
-                            symbol=self.symbol,
-                            side='BUY' if position_info['side'] == 'SHORT' else 'SELL',
-                            type='MARKET',
-                            quantity=position_info['size']
-                        )
-                        logger.info(f"✅ Position closed based on RL exit signal.")
+                    # Check if bot can close this position (only if it was opened by bot)
+                    if self.can_close_position():
+                        position_data = {
+                            'entry_price': position_info['entry_price'],
+                            'side': position_info['side']
+                        }
+                        exit_decision = rl_enhancer.check_exit_conditions(position_data, current_price)
+                        
+                        if exit_decision['should_exit']:
+                            logger.info(f"🚪 RL Exit Signal: {exit_decision['reason']}")
+                            self.client.futures_cancel_all_open_orders(symbol=self.symbol)
+                            close_order = self.client.futures_create_order(
+                                symbol=self.symbol,
+                                side='BUY' if position_info['side'] == 'SHORT' else 'SELL',
+                                type='MARKET',
+                                quantity=position_info['size']
+                            )
+                            # Update database trades
+                            self.update_open_trades_on_close(current_price)
+                            # Clear position tracking
+                            self.clear_position_tracking()
+                            logger.info(f"✅ Position closed based on RL exit signal: Order ID {close_order.get('orderId')}")
+                    else:
+                        logger.info("🚫 RL exit signal detected but cannot close position - not opened by this bot")
                 
-                # Execute trades based on signals
-                if signal_data['signal'] != 0 and signal_data['strength'] > 0:
+                # Check for HOLD signal to close existing positions
+                if signal_data['signal'] == 0 and position_info['side']:
+                    logger.info(f"🛑 HOLD signal detected with open {position_info['side']} position")
+                    self.close_position_on_hold_signal(position_info, current_price)
+                
+                # Check for opposite signal to close existing positions with negative PnL
+                elif signal_data['signal'] != 0 and position_info['side']:
+                    position_closed = self.close_position_on_opposite_signal(position_info, signal_data['signal'], current_price)
+                    
+                    # If position was closed, we can now execute a new trade
+                    if position_closed and signal_data['strength'] > 0:
+                        logger.info(f"📈 Executing new trade after closing opposite position based on {signal_name} signal...")
+                        self.execute_trade(signal_data, current_price)
+                    elif not position_closed:
+                        logger.info(f"✅ {signal_name} signal detected but keeping {position_info['side']} position (positive PnL). No new trade will be executed.")
+                
+                # Execute trades based on signals (no current position)
+                elif signal_data['signal'] != 0 and signal_data['strength'] > 0:
                     if not position_info['side']:  # No current position
                         logger.info(f"📈 Executing trade based on {signal_name} signal...")
                         self.execute_trade(signal_data, current_price)
-                    else:
-                        logger.info(f"✅ Signal detected but a {position_info['side']} position for {self.symbol} is already open. No new trade will be executed.")
                 
                 # Log reasons
                 for reason in signal_data.get('reasons', []):
@@ -722,9 +1121,29 @@ def show_status():
                     pnl = (current_price - trade['entry_price']) * trade['quantity']
                     pnl_pct = ((current_price - trade['entry_price']) / trade['entry_price']) * 100
                 
+                # Get TP/SL prices from open orders
+                try:
+                    open_orders = client.futures_get_open_orders(symbol='SUIUSDC')
+                    tp_price = None
+                    sl_price = None
+                    
+                    for order in open_orders:
+                        if order['type'] == 'TAKE_PROFIT_MARKET':
+                            tp_price = float(order['stopPrice'])
+                        elif order['type'] == 'STOP_MARKET':
+                            sl_price = float(order['stopPrice'])
+                except:
+                    tp_price = None
+                    sl_price = None
+                
                 color = "🟢" if pnl > 0 else "🔴"
                 print(f"  {color} {trade['side']} {trade['quantity']} @ ${trade['entry_price']:.4f}")
                 print(f"    Current: ${current_price:.4f} | PnL: ${pnl:.2f} ({pnl_pct:.2f}%)")
+                
+                if tp_price or sl_price:
+                    tp_text = f"${tp_price:.4f}" if tp_price else "Not set"
+                    sl_text = f"${sl_price:.4f}" if sl_price else "Not set"
+                    print(f"    🎯 TP: {tp_text} | SL: {sl_text}")
                 
         except Exception as e:
             print(f"Database: 🔴 ERROR - {e}")

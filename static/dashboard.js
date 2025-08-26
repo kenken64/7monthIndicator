@@ -13,9 +13,15 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('refreshBtn').addEventListener('click', refreshDashboard);
     document.getElementById('symbolSelect').addEventListener('change', handleSymbolChange);
     document.getElementById('timeRange').addEventListener('change', handleTimeRangeChange);
+    document.getElementById('logsBtn').addEventListener('click', handleLogsClick);
+    document.getElementById('pauseBtn').addEventListener('click', handlePauseClick);
+    
+    // Load pause status on startup
+    loadPauseStatus();
     
     // Auto-refresh every 30 seconds
     setInterval(refreshDashboard, 30000);
+    setInterval(loadPauseStatus, 10000); // Check pause status more frequently
 });
 
 function initializeCharts() {
@@ -383,6 +389,13 @@ async function loadRLBotStatus() {
             document.getElementById('rlBotLastUpdate').textContent = 
                 botData.last_update ? formatTime(botData.last_update) : 'N/A';
             
+            // Update trade execution status - this will be updated by loadPauseStatus
+            // but we can set a default here
+            if (!document.getElementById('tradeExecution').textContent || 
+                document.getElementById('tradeExecution').textContent === '-') {
+                document.getElementById('tradeExecution').textContent = '🟢 ENABLED';
+            }
+            
             // Update RL decision info
             if (botData.rl_decision) {
                 const decision = botData.rl_decision;
@@ -507,11 +520,13 @@ async function loadRecentRLDecisions() {
 function formatTime(timeString) {
     try {
         if (!timeString) return 'N/A';
-        const date = new Date(timeString + 'Z'); // Assume UTC
+        // Parse as UTC by properly formatting the timestamp
+        const date = new Date(timeString.replace(' ', 'T') + 'Z');
         return date.toLocaleTimeString('en-US', { 
             hour: '2-digit', 
             minute: '2-digit',
-            second: '2-digit'
+            second: '2-digit',
+            timeZone: 'Asia/Singapore'
         });
     } catch (e) {
         return timeString;
@@ -662,11 +677,126 @@ async function loadChartData() {
 
 function formatDateTime(dateString) {
     if (!dateString) return '-';
-    const date = new Date(dateString);
+    // Parse as UTC by adding 'Z' or treating as UTC
+    const date = new Date(dateString.replace(' ', 'T') + 'Z');
     return date.toLocaleString('en-US', {
         month: 'short',
         day: '2-digit',
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
+        timeZone: 'Asia/Singapore'
     });
+}
+
+function handleLogsClick() {
+    // Open logs page in a new window/tab
+    window.open('/logs', '_blank', 'width=1400,height=900,scrollbars=yes,resizable=yes');
+}
+
+async function handlePauseClick() {
+    try {
+        const pauseBtn = document.getElementById('pauseBtn');
+        const originalContent = pauseBtn.innerHTML;
+        
+        // Show loading state
+        pauseBtn.innerHTML = '🔄 <span class="hidden sm:inline">Loading...</span>';
+        pauseBtn.disabled = true;
+        
+        const response = await fetch('/api/bot-pause', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ action: 'toggle' })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // Update button state based on response
+            updatePauseButton(data.status === 'paused');
+            
+            // Show success message
+            showNotification(`Bot ${data.status} successfully`, 'success');
+            
+            // Refresh pause status immediately
+            await loadPauseStatus();
+        } else {
+            throw new Error(data.error || 'Failed to toggle pause state');
+        }
+        
+    } catch (error) {
+        console.error('Error toggling pause:', error);
+        showNotification('Failed to toggle bot pause state', 'error');
+        
+        // Restore original button state
+        const pauseBtn = document.getElementById('pauseBtn');
+        pauseBtn.innerHTML = originalContent;
+        pauseBtn.disabled = false;
+    }
+}
+
+async function loadPauseStatus() {
+    try {
+        const response = await fetch('/api/bot-pause-status');
+        const data = await response.json();
+        
+        if (data.success) {
+            const isPaused = data.data.is_paused;
+            
+            // Update pause button
+            updatePauseButton(isPaused);
+            
+            // Update trade execution status indicator
+            const tradeExecElement = document.getElementById('tradeExecution');
+            if (isPaused) {
+                tradeExecElement.textContent = '⏸️ PAUSED';
+                tradeExecElement.className = 'text-xs font-bold text-yellow-600';
+            } else {
+                tradeExecElement.textContent = '🟢 ENABLED';
+                tradeExecElement.className = 'text-xs font-bold text-green-600';
+            }
+            
+        } else {
+            console.error('Error loading pause status:', data.error);
+        }
+    } catch (error) {
+        console.error('Error loading pause status:', error);
+    }
+}
+
+function updatePauseButton(isPaused) {
+    const pauseBtn = document.getElementById('pauseBtn');
+    const pauseBtnText = document.getElementById('pauseBtnText');
+    
+    if (isPaused) {
+        pauseBtn.className = 'bg-green-500 text-white px-3 py-1 sm:px-4 sm:py-2 rounded hover:bg-green-600 text-sm sm:text-base flex-1 sm:flex-none';
+        pauseBtn.innerHTML = '▶️ <span class="hidden sm:inline" id="pauseBtnText">Resume</span>';
+    } else {
+        pauseBtn.className = 'bg-yellow-500 text-white px-3 py-1 sm:px-4 sm:py-2 rounded hover:bg-yellow-600 text-sm sm:text-base flex-1 sm:flex-none';
+        pauseBtn.innerHTML = '⏸️ <span class="hidden sm:inline" id="pauseBtnText">Pause</span>';
+    }
+    
+    pauseBtn.disabled = false;
+}
+
+function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `fixed top-4 right-4 px-4 py-2 rounded shadow-lg z-50 ${
+        type === 'success' ? 'bg-green-500 text-white' :
+        type === 'error' ? 'bg-red-500 text-white' :
+        'bg-blue-500 text-white'
+    }`;
+    notification.textContent = message;
+    
+    // Add to page
+    document.body.appendChild(notification);
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+        if (notification.parentNode) {
+            notification.parentNode.removeChild(notification);
+        }
+    }, 3000);
 }

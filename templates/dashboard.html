@@ -59,6 +59,12 @@
                     <button id="refreshBtn" class="bg-blue-500 text-white px-3 py-1 sm:px-4 sm:py-2 rounded hover:bg-blue-600 text-sm sm:text-base flex-1 sm:flex-none">
                         🔄 <span class="hidden sm:inline">Refresh</span>
                     </button>
+                    <button id="logsBtn" class="bg-green-500 text-white px-3 py-1 sm:px-4 sm:py-2 rounded hover:bg-green-600 text-sm sm:text-base flex-1 sm:flex-none">
+                        📋 <span class="hidden sm:inline">Logs</span>
+                    </button>
+                    <button id="pauseBtn" class="bg-yellow-500 text-white px-3 py-1 sm:px-4 sm:py-2 rounded hover:bg-yellow-600 text-sm sm:text-base flex-1 sm:flex-none">
+                        ⏸️ <span class="hidden sm:inline" id="pauseBtnText">Pause</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -101,6 +107,10 @@
                     <div class="flex justify-between items-center">
                         <span class="text-sm text-gray-600">Last Update:</span>
                         <span class="text-xs" id="rlBotLastUpdate">-</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-600">Trade Execution:</span>
+                        <span class="text-xs font-bold" id="tradeExecution">-</span>
                     </div>
                 </div>
             </div>
