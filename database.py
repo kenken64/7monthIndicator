@@ -342,16 +342,45 @@ class TradingDatabase:
                 
                 if row and row['total_trades'] > 0:
                     win_rate = (row['winning_trades'] / row['total_trades']) * 100
+                    
+                    # Calculate projections based on historical performance
+                    avg_daily_pnl = (row['total_pnl'] or 0) / days if days > 0 else 0
+                    avg_win = row['avg_win'] or 0
+                    avg_loss = row['avg_loss'] or 0
+                    
+                    # Project for 90 days
+                    projection_days = 90
+                    expected_trades_90d = (row['total_trades'] / days) * projection_days if days > 0 else 0
+                    
+                    # Best case: assume higher win rate and average wins
+                    best_case_wins = expected_trades_90d * min(win_rate * 1.2, 100) / 100
+                    best_case_losses = expected_trades_90d - best_case_wins
+                    best_case_pnl = (best_case_wins * avg_win * 1.3) + (best_case_losses * avg_loss)
+                    
+                    # Worst case: assume lower win rate and higher losses  
+                    worst_case_wins = expected_trades_90d * max(win_rate * 0.6, 0) / 100
+                    worst_case_losses = expected_trades_90d - worst_case_wins
+                    worst_case_pnl = (worst_case_wins * avg_win * 0.7) + (worst_case_losses * avg_loss * 1.5)
+                    
+                    # Expected case: current performance trends
+                    expected_pnl_90d = avg_daily_pnl * projection_days
+                    
                     return {
                         'total_trades': row['total_trades'],
                         'winning_trades': row['winning_trades'] or 0,
                         'losing_trades': row['losing_trades'] or 0,
                         'win_rate': win_rate,
                         'total_pnl': row['total_pnl'] or 0,
-                        'avg_win': row['avg_win'] or 0,
-                        'avg_loss': row['avg_loss'] or 0,
+                        'avg_win': avg_win,
+                        'avg_loss': avg_loss,
                         'max_loss': row['max_loss'] or 0,
-                        'days': days
+                        'days': days,
+                        'projections': {
+                            'best_case_90d': round(best_case_pnl, 2),
+                            'worst_case_90d': round(worst_case_pnl, 2),
+                            'expected_90d': round(expected_pnl_90d, 2),
+                            'confidence': min(row['total_trades'] * 2, 100)  # Higher confidence with more trades
+                        }
                     }
                 else:
                     return {'total_trades': 0, 'days': days}
@@ -412,6 +441,112 @@ class TradingDatabase:
         except Exception as e:
             logger.error(f"Error exporting data: {e}")
             return None
+
+    def get_all_trades(self, symbol: str, exclude_manual: bool = False) -> List[Dict]:
+        """Get all trades for analysis, optionally excluding manual closures"""
+        try:
+            with self.get_connection() as conn:
+                if exclude_manual:
+                    cursor = conn.execute('''
+                        SELECT timestamp, side, quantity, entry_price, exit_price, pnl
+                        FROM trades 
+                        WHERE symbol = ? AND (order_id NOT LIKE 'MANUAL_%' OR order_id IS NULL)
+                        ORDER BY timestamp ASC
+                    ''', (symbol,))
+                else:
+                    cursor = conn.execute('''
+                        SELECT timestamp, side, quantity, entry_price, exit_price, pnl
+                        FROM trades 
+                        WHERE symbol = ?
+                        ORDER BY timestamp ASC
+                    ''', (symbol,))
+                
+                return [dict(row) for row in cursor.fetchall()]
+                
+        except Exception as e:
+            logger.error(f"Error getting all trades: {e}")
+            return []
+
+    def get_recent_trades(self, symbol: str, limit: int = 10) -> List[Dict]:
+        """Get recent trades with proper formatting"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute('''
+                    SELECT timestamp, side, quantity, entry_price, exit_price, pnl, status
+                    FROM trades 
+                    WHERE symbol = ? AND timestamp >= datetime('now', '-7 days')
+                    ORDER BY timestamp DESC 
+                    LIMIT ?
+                ''', (symbol, limit))
+                
+                return [dict(row) for row in cursor.fetchall()]
+                
+        except Exception as e:
+            logger.error(f"Error getting recent trades: {e}")
+            return []
+
+    def get_total_trades_count(self, symbol: str) -> int:
+        """Get total number of trades for a symbol"""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute('SELECT COUNT(*) as count FROM trades WHERE symbol = ?', (symbol,))
+                result = cursor.fetchone()
+                return result['count'] if result else 0
+                
+        except Exception as e:
+            logger.error(f"Error getting trades count: {e}")
+            return 0
+
+    def record_manual_closure(self, closure: Dict, symbol: str) -> bool:
+        """Record an individual manual closure in the database"""
+        try:
+            with self.get_connection() as conn:
+                # Check if already exists
+                cursor = conn.execute('''
+                    SELECT id FROM trades 
+                    WHERE timestamp = ? AND side = 'SELL' AND quantity = ?
+                ''', (closure['timestamp'], closure['amount']))
+                
+                if cursor.fetchone():
+                    logger.debug(f"Manual closure already recorded: {closure['amount']} at {closure['timestamp']}")
+                    return False
+                
+                # Calculate PnL
+                pnl = (closure['exit_price'] - closure['entry_price']) * closure['amount']
+                pnl_percentage = (pnl / (closure['entry_price'] * closure['amount'])) * 100 if closure['entry_price'] > 0 else 0
+                
+                # Create order ID
+                ts_str = str(closure['timestamp']).replace(' ', '_').replace(':', '').replace('-', '')
+                order_id = f"MANUAL_{closure['type']}_{ts_str}"
+                
+                # Insert into database
+                conn.execute('''
+                    INSERT INTO trades (
+                        timestamp, symbol, side, quantity, entry_price,
+                        exit_price, pnl, pnl_percentage, status, order_id,
+                        created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    closure['timestamp'],
+                    symbol,
+                    'SELL',
+                    closure['amount'],
+                    closure['entry_price'],
+                    closure['exit_price'],
+                    pnl,
+                    pnl_percentage,
+                    'CLOSED',
+                    order_id,
+                    datetime.now(),
+                    datetime.now()
+                ))
+                
+                logger.info(f"✅ Recorded {closure['type']}: {closure['amount']:.1f} @ ${closure['exit_price']:.4f}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error recording manual closure: {e}")
+            return False
 
 # Singleton instance
 _db_instance = None

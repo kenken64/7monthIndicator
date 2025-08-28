@@ -206,6 +206,8 @@ async function loadPerformanceData() {
         const response = await fetch(`/api/performance/${currentSymbol}?days=${currentDays}`);
         const data = await response.json();
         
+        console.log('Performance API Response:', data); // Debug log
+        
         if (data.success && data.data.total_trades > 0) {
             const perf = data.data;
             
@@ -230,12 +232,48 @@ async function loadPerformanceData() {
             const pnlElement = document.getElementById('totalPnl');
             pnlElement.className = perf.total_pnl >= 0 ? 'font-bold text-green-600' : 'font-bold text-red-600';
             
+            // Update risk projections if available
+            console.log('Projections data:', perf.projections); // Debug log
+            if (perf.projections) {
+                const proj = perf.projections;
+                console.log('Setting projection values:', proj); // Debug log
+                
+                document.getElementById('bestCase').textContent = `$${proj.best_case_90d.toFixed(2)}`;
+                document.getElementById('worstCase').textContent = `$${proj.worst_case_90d.toFixed(2)}`;
+                document.getElementById('expectedRange').textContent = `$${proj.worst_case_90d.toFixed(0)} - $${proj.best_case_90d.toFixed(0)}`;
+                
+                // Update confidence bar
+                const confidenceBar = document.getElementById('confidenceBar');
+                confidenceBar.style.width = `${proj.confidence}%`;
+                
+                // Color coding for projections
+                const bestCaseElement = document.getElementById('bestCase');
+                const worstCaseElement = document.getElementById('worstCase');
+                
+                bestCaseElement.className = proj.best_case_90d >= 0 ? 'font-bold text-green-600' : 'font-bold text-red-600';
+                worstCaseElement.className = proj.worst_case_90d >= 0 ? 'font-bold text-green-600' : 'font-bold text-red-600';
+                
+            } else {
+                console.log('No projections data found in response'); // Debug log
+                // Clear projection data if not available
+                document.getElementById('bestCase').textContent = '$0.00';
+                document.getElementById('worstCase').textContent = '$0.00';
+                document.getElementById('expectedRange').textContent = '$0 - $0';
+                document.getElementById('confidenceBar').style.width = '0%';
+            }
+            
         } else {
             // Clear performance data
             ['winRate', 'totalPnl', 'avgWin', 'avgLoss', 'performanceTotalTrades', 
              'winningTrades', 'losingTrades', 'maxLoss', 'riskReward'].forEach(id => {
                 document.getElementById(id).textContent = '-';
             });
+            
+            // Clear projection data
+            document.getElementById('bestCase').textContent = '$0.00';
+            document.getElementById('worstCase').textContent = '$0.00';
+            document.getElementById('expectedRange').textContent = '$0 - $0';
+            document.getElementById('confidenceBar').style.width = '0%';
         }
     } catch (error) {
         console.error('Error loading performance data:', error);
@@ -274,9 +312,6 @@ async function loadProjectedBalance() {
             
             // Update projection chart
             updateProjectionChart(projData);
-            
-            // Load 90-day projections for risk assessment
-            loadLongTermProjections();
             
             // Update note
             document.getElementById('projectionNote').textContent = 
@@ -330,42 +365,6 @@ function updateProjectionChart(projData) {
     projectionChart.update();
 }
 
-async function loadLongTermProjections() {
-    try {
-        const response = await fetch(`/api/projected-balance/${currentSymbol}?days=${currentDays}&projection_days=90`);
-        const data = await response.json();
-        
-        if (data.success && data.data) {
-            const projections = data.data.projections;
-            
-            let bestCase = 0;
-            let worstCase = Infinity;
-            let realistic = 0;
-            
-            projections.forEach(scenario => {
-                const finalBalance = scenario.projections[scenario.projections.length - 1].balance;
-                if (scenario.scenario === 'optimistic') bestCase = finalBalance;
-                if (scenario.scenario === 'pessimistic') worstCase = finalBalance;
-                if (scenario.scenario === 'realistic') realistic = finalBalance;
-            });
-            
-            document.getElementById('bestCase').textContent = `$${bestCase.toFixed(2)}`;
-            document.getElementById('worstCase').textContent = `$${worstCase.toFixed(2)}`;
-            document.getElementById('expectedRange').textContent = 
-                `$${worstCase.toFixed(0)} - $${bestCase.toFixed(0)}`;
-            
-            // Calculate confidence based on spread
-            const spread = bestCase - worstCase;
-            const confidence = Math.max(0, Math.min(100, 100 - (spread / bestCase * 100)));
-            
-            document.getElementById('confidenceBar').style.width = `${confidence}%`;
-            document.getElementById('confidenceText').textContent = `${confidence.toFixed(0)}% confidence`;
-            
-        }
-    } catch (error) {
-        console.error('Error loading long term projections:', error);
-    }
-}
 
 async function loadRLBotStatus() {
     try {

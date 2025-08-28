@@ -222,6 +222,13 @@ class RLEnhancedBinanceFuturesBot:
         # Check for existing positions on startup
         self.check_existing_positions_on_startup()
         
+        # Run enhanced reconciliation on startup
+        logger.info("🔄 Running enhanced reconciliation on startup...")
+        try:
+            self.enhanced_reconcile_with_display()
+        except Exception as e:
+            logger.error(f"⚠️ Startup reconciliation failed: {e}")
+        
         # Send startup notification to Telegram
         startup_message = f"""<b>🤖 RL Trading Bot Started</b>
 
@@ -1053,6 +1060,170 @@ class RLEnhancedBinanceFuturesBot:
                 logger.error(f"❌ Unexpected error: {e}")
                 time.sleep(60)  # Wait 1 minute before retrying
 
+    def detect_individual_manual_closures(self):
+        """Detect and record individual manual position closures"""
+        try:
+            logger.info("🔍 Analyzing individual manual position closures...")
+            
+            # Get all trades excluding previous manual closures
+            all_trades = self.db.get_all_trades(self.symbol, exclude_manual=True)
+            
+            if not all_trades:
+                logger.info("📊 No trades found for analysis")
+                return []
+            
+            # Track position and detect manual closures
+            position = 0
+            manual_closures = []
+            large_position_start = None
+            
+            for trade in all_trades:
+                old_position = position
+                
+                if trade['side'] == 'BUY':
+                    position += trade['quantity']
+                    # Track when we first go positive (indicating start of large untracked position)
+                    if old_position <= 0 and position > 0:
+                        large_position_start = {
+                            'timestamp': trade['timestamp'],
+                            'entry_price': trade['entry_price']
+                        }
+                        logger.info(f"📈 Large position start detected: {position:.1f} at {trade['timestamp']}")
+                else:  # SELL
+                    position -= trade['quantity']
+                    
+                    # Detect manual closure events
+                    if old_position > 0 and position <= 0:
+                        # Full closure detected
+                        closure_amount = old_position
+                        exit_price = trade.get('exit_price', trade['entry_price'])
+                        entry_price = large_position_start['entry_price'] if large_position_start else trade['entry_price']
+                        
+                        manual_closures.append({
+                            'timestamp': trade['timestamp'],
+                            'type': 'FULL_CLOSE',
+                            'amount': closure_amount,
+                            'exit_price': exit_price,
+                            'entry_price': entry_price
+                        })
+                        logger.info(f"🔴 FULL closure detected: {closure_amount:.1f} at {trade['timestamp']}")
+                        
+                    elif old_position > 0 and position < old_position:
+                        # Partial closure
+                        closure_amount = old_position - position
+                        if closure_amount > 100:  # Only record significant partial closures
+                            exit_price = trade.get('exit_price', trade['entry_price'])
+                            entry_price = large_position_start['entry_price'] if large_position_start else trade['entry_price']
+                            
+                            manual_closures.append({
+                                'timestamp': trade['timestamp'],
+                                'type': 'PARTIAL_CLOSE',
+                                'amount': closure_amount,
+                                'exit_price': exit_price,
+                                'entry_price': entry_price
+                            })
+                            logger.info(f"🟡 PARTIAL closure detected: {closure_amount:.1f} at {trade['timestamp']}")
+            
+            # Handle final untracked position if exists
+            try:
+                current_position = self.get_position_info()
+                current_size = current_position.get('size', 0) if current_position.get('side') else 0
+            except:
+                current_size = 0
+            
+            if position < 0 and current_size == 0:
+                # There's still an untracked closure
+                final_closure_amount = abs(position)
+                
+                # Get current market price
+                try:
+                    ticker = self.client.get_symbol_ticker(symbol=self.symbol)
+                    current_price = float(ticker['price'])
+                except:
+                    current_price = 3.42  # Fallback
+                
+                entry_price = large_position_start['entry_price'] if large_position_start else current_price
+                
+                manual_closures.append({
+                    'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'type': 'FINAL_MANUAL_CLOSE',
+                    'amount': final_closure_amount,
+                    'exit_price': current_price,
+                    'entry_price': entry_price
+                })
+                logger.info(f"🔴 FINAL manual closure detected: {final_closure_amount:.1f}")
+            
+            # Record closures in database
+            recorded_count = 0
+            for closure in manual_closures:
+                if self.db.record_manual_closure(closure, self.symbol):
+                    recorded_count += 1
+            
+            logger.info(f"🎯 Recorded {recorded_count} individual manual closures")
+            return manual_closures
+            
+        except Exception as e:
+            logger.error(f"❌ Error detecting individual closures: {e}")
+            return []
+
+    def show_recent_trades(self, limit=10):
+        """Display recent trades with proper price formatting"""
+        try:
+            logger.info(f"📊 Displaying last {limit} trades:")
+            
+            # Get recent trades from database
+            recent_trades = self.db.get_recent_trades(self.symbol, limit)
+            
+            if not recent_trades:
+                logger.info("📭 No recent trades found")
+                return
+            
+            logger.info(f"📋 Recent {len(recent_trades)} trades:")
+            for trade in recent_trades:
+                # Show exit_price for SELL trades, entry_price for BUY trades
+                if trade['side'] == 'SELL' and trade.get('exit_price'):
+                    price = trade['exit_price']
+                else:
+                    price = trade['entry_price']
+                
+                pnl_str = f"PnL: ${trade['pnl']:.2f}" if trade.get('pnl') else "PnL: N/A"
+                logger.info(f"  {trade['timestamp']} | {trade['side']} {trade['quantity']:.1f} @ ${price:.4f} | {pnl_str}")
+            
+            # Show total trades count
+            total_count = self.db.get_total_trades_count(self.symbol)
+            logger.info(f"📊 Total trades in database: {total_count}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error showing recent trades: {e}")
+
+    def enhanced_reconcile_with_display(self):
+        """Enhanced reconciliation with manual closure detection and trade display"""
+        try:
+            logger.info("🔄 Starting enhanced position reconciliation...")
+            
+            # First detect and record individual manual closures
+            manual_closures = self.detect_individual_manual_closures()
+            
+            # Run standard position reconciliation
+            self.reconcile_positions()
+            
+            # Display recent trades
+            self.show_recent_trades(limit=15)
+            
+            # Send summary notification if Telegram is available
+            if hasattr(self, 'send_telegram_message') and manual_closures:
+                message = f"🔄 Reconciliation Complete\n"
+                message += f"Manual closures detected: {len(manual_closures)}\n"
+                if manual_closures:
+                    total_amount = sum(c['amount'] for c in manual_closures)
+                    message += f"Total amount: {total_amount:.1f} {self.symbol}\n"
+                self.send_telegram_message(message)
+            
+            logger.info("✅ Enhanced reconciliation completed!")
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced reconciliation failed: {e}")
+
 def main():
     """Start the RL-Enhanced Trading Bot"""
     try:
@@ -1213,7 +1384,33 @@ def parse_arguments():
     logs_parser.add_argument('-f', '--follow', action='store_true', 
                            help='Follow log output in real-time')
     
+    # Reconcile command
+    reconcile_parser = subparsers.add_parser('reconcile', help='Run enhanced reconciliation with recent trades display')
+    
     return parser.parse_args()
+
+def run_reconcile():
+    """Run enhanced reconciliation standalone"""
+    try:
+        logger.info("🔄 Starting standalone enhanced reconciliation...")
+        
+        # Initialize bot for reconciliation only
+        bot = RLEnhancedBinanceFuturesBot(
+            symbol='SUIUSDC',
+            leverage=50,
+            position_percentage=2.0
+        )
+        
+        # Run enhanced reconciliation
+        bot.enhanced_reconcile_with_display()
+        
+        logger.info("✅ Standalone reconciliation completed!")
+        
+    except Exception as e:
+        logger.error(f"❌ Standalone reconciliation failed: {e}")
+        return False
+    
+    return True
 
 if __name__ == "__main__":
     args = parse_arguments()
@@ -1222,6 +1419,8 @@ if __name__ == "__main__":
         show_status()
     elif args.command == 'logs':
         show_logs(args.lines, args.follow)
+    elif args.command == 'reconcile':
+        run_reconcile()
     else:
         # Default to running the bot
         main()

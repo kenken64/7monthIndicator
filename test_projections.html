@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Projections</title>
+</head>
+<body>
+    <h1>Risk Assessment Test</h1>
+    <div>Best Case: <span id="bestCase">Loading...</span></div>
+    <div>Worst Case: <span id="worstCase">Loading...</span></div>
+    <div>Expected Range: <span id="expectedRange">Loading...</span></div>
+    
+    <script>
+        async function testProjections() {
+            try {
+                console.log('Fetching projections data...');
+                const response = await fetch('/api/performance/SUIUSDC?days=30');
+                const data = await response.json();
+                
+                console.log('Full API Response:', data);
+                
+                if (data.success && data.data.total_trades > 0) {
+                    const perf = data.data;
+                    console.log('Performance data:', perf);
+                    console.log('Projections in response:', perf.projections);
+                    
+                    if (perf.projections) {
+                        const proj = perf.projections;
+                        console.log('Setting values:', proj);
+                        
+                        document.getElementById('bestCase').textContent = `$${proj.best_case_90d.toFixed(2)}`;
+                        document.getElementById('worstCase').textContent = `$${proj.worst_case_90d.toFixed(2)}`;
+                        document.getElementById('expectedRange').textContent = `$${proj.worst_case_90d.toFixed(0)} - $${proj.best_case_90d.toFixed(0)}`;
+                        
+                        console.log('Values set successfully');
+                    } else {
+                        console.log('No projections found in performance data');
+                        document.getElementById('bestCase').textContent = 'No projections';
+                        document.getElementById('worstCase').textContent = 'No projections';
+                        document.getElementById('expectedRange').textContent = 'No projections';
+                    }
+                } else {
+                    console.log('API call failed or no trades');
+                    document.getElementById('bestCase').textContent = 'No data';
+                    document.getElementById('worstCase').textContent = 'No data';
+                    document.getElementById('expectedRange').textContent = 'No data';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('bestCase').textContent = 'Error';
+                document.getElementById('worstCase').textContent = 'Error';
+                document.getElementById('expectedRange').textContent = 'Error';
+            }
+        }
+        
+        // Test when page loads
+        testProjections();
+    </script>
+</body>
+</html>

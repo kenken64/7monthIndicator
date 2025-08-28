@@ -1,5 +1,40 @@
 # Binance Futures Trading Bot with RL Enhancement
 
+## It's Like a Point-Scoring Game! 🎯
+
+Imagine you're trying to decide whether to buy or sell something (like trading cards), but you don't want to make a bad choice. So you have a special rule: you need to collect at least 3 points before you can make a trade.
+
+### How You Get Points:
+
+**MACD Signals (±1 point each) 📈**
+- Think of this like watching how fast a race car is speeding up or slowing down
+- If the car is speeding up = +1 point (good to buy)
+- If it's slowing down = -1 point (maybe sell)
+
+**VWAP Signal (±1 point) ⚖️**
+- This is like seeing who's winning in a tug-of-war between buyers and sellers
+- If buyers are stronger = +1 point
+- If sellers are stronger = -1 point
+
+**EMA Signals (Different point values) 📊**
+- These are like looking at different time periods to see which way things are moving:
+  - Short-term trend (9 days): ±1 point
+  - Medium-term crossover (9 vs 21 days): ±2 points
+  - Longer trends (50 and 200 days): ±1 point each
+  - Big trend change: ±3 points (this is like a really important signal!)
+
+**RSI Signal (±1 point) 🌡️**
+- This is like a thermometer that tells you if something is "too hot" (expensive) or "too cold" (cheap)
+- If it's too expensive = -1 point
+- If it's too cheap = +1 point
+
+### The Rule:
+You can only make a trade when you collect at least 3 points in the same direction. It's like needing enough friends to agree with you before making a big decision!
+
+This way, you don't make trades based on just one signal - you wait until multiple "friends" (indicators) agree with you first! 🤝
+
+---
+
 A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs, RSI) enhanced with Reinforcement Learning (RL) to generate intelligent trading signals for Binance Futures markets with advanced position management and PnL-based decision making.
 
 ## 🚨 IMPORTANT SAFETY WARNINGS

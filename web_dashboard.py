@@ -24,6 +24,12 @@ def dashboard():
     """Main dashboard page"""
     return render_template('dashboard.html')
 
+@app.route('/test')
+def test_projections():
+    """Test page for projections"""
+    with open('test_projections.html', 'r') as f:
+        return f.read()
+
 @app.route('/api/performance/<symbol>')
 def get_performance(symbol):
     """API endpoint to get performance metrics"""
