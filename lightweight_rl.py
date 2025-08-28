@@ -1,7 +1,19 @@
 #!/usr/bin/env python3
 """
 Lightweight RL Trading Agent
-Simple Q-Learning based approach without heavy dependencies
+
+A simple yet effective Q-Learning based trading agent that doesn't require
+heavy machine learning frameworks. Features include:
+
+- Tabular Q-Learning with discretized market states
+- Technical indicator integration (RSI, MACD, VWAP, EMA)
+- Timing-aware state representation (market hours, days)
+- Built-in trading simulator for training
+- Model persistence and performance tracking
+- Conservative risk management approach
+
+The system learns from historical trading data to make informed decisions
+while maintaining simplicity and transparency in its decision-making process.
 """
 
 import numpy as np
@@ -20,22 +32,39 @@ logger = logging.getLogger(__name__)
 class SimpleTradingAgent:
     """
     Simple Q-Learning agent for trading
-    Uses tabular Q-learning with discretized states
+    
+    Implements tabular Q-learning with discretized market states for trading
+    decision making. The agent learns optimal actions (BUY, SELL, HOLD, CLOSE)
+    based on technical indicators and market timing patterns.
+    
+    Features:
+    - State discretization of continuous market indicators
+    - Epsilon-greedy exploration policy
+    - Q-value updates using standard Q-learning formula
+    - Model persistence for trained agents
+    - Training statistics and performance tracking
     """
     
     def __init__(self, learning_rate=0.1, discount_factor=0.95, epsilon=0.1):
+        """Initialize Q-Learning agent with hyperparameters
+        
+        Args:
+            learning_rate: Learning rate for Q-value updates (default: 0.1)
+            discount_factor: Future reward discount factor (default: 0.95)
+            epsilon: Exploration rate for epsilon-greedy policy (default: 0.1)
+        """
         self.lr = learning_rate
         self.gamma = discount_factor
         self.epsilon = epsilon
         
-        # Q-table: state -> action -> Q-value
+        # Q-table: state -> action -> Q-value (tabular representation)
         self.q_table = {}
         
-        # Action space: [HOLD, BUY, SELL, CLOSE]
+        # Action space: [HOLD, BUY, SELL, CLOSE] - all possible trading actions
         self.actions = ['HOLD', 'BUY', 'SELL', 'CLOSE']
         self.num_actions = len(self.actions)
         
-        # Learning statistics
+        # Learning statistics for tracking training progress
         self.training_history = []
         self.total_episodes = 0
         

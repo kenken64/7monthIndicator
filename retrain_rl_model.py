@@ -1,7 +1,17 @@
 #!/usr/bin/env python3
 """
 Enhanced RL Model Retraining Script
-Uses database signals and trades to retrain the RL model with improved reward system
+
+A comprehensive retraining system for the RL trading model that:
+- Extracts training data from the database with signal outcomes
+- Implements an enhanced reward system based on actual trade results
+- Provides supervised learning aspects using known trade outcomes
+- Includes advanced simulation with streak bonuses and penalties
+- Supports incremental training on existing models
+- Tracks learning progress and saves checkpoints
+
+The script uses historical signal data and their corresponding trade results
+to create a more realistic training environment for the RL agent.
 """
 
 import os

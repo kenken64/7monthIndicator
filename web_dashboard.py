@@ -1,7 +1,18 @@
 #!/usr/bin/env python3
 """
 Web Dashboard for Trading Bot Analysis
-Flask web application to display trading signals and performance metrics
+
+A comprehensive Flask web application that provides real-time monitoring
+and analysis for the RL-enhanced trading bot. Features include:
+
+- Performance metrics and PnL tracking
+- Real-time signal analysis and visualization
+- Live position monitoring with Binance integration
+- Interactive charts for trade history and signals
+- System status monitoring and bot control
+- Live log streaming for debugging
+- Balance projection calculations
+- RL decision analysis and insights
 """
 
 import json
@@ -15,32 +26,54 @@ import logging
 app = Flask(__name__)
 app.secret_key = 'trading_bot_secret_key'
 
-# Configure logging
+# Configure logging for web dashboard activities
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @app.route('/')
 def dashboard():
-    """Main dashboard page"""
+    """Main dashboard page
+    
+    Serves the primary dashboard interface with real-time trading
+    data, performance metrics, and system status.
+    """
     return render_template('dashboard.html')
 
 @app.route('/test')
 def test_projections():
-    """Test page for projections"""
+    """Test page for projections
+    
+    Development endpoint for testing balance projection features
+    and visualization components.
+    """
     with open('test_projections.html', 'r') as f:
         return f.read()
 
 @app.route('/api/performance/<symbol>')
 def get_performance(symbol):
-    """API endpoint to get performance metrics"""
+    """API endpoint to get performance metrics
+    
+    Calculates and returns comprehensive trading performance statistics
+    including win rate, PnL, average gains/losses, and risk metrics.
+    Falls back to unrealized PnL calculation for open positions.
+    
+    Args:
+        symbol: Trading pair symbol (e.g., 'SUIUSDC')
+        
+    Query Parameters:
+        days: Number of days to analyze (default: 30)
+        
+    Returns:
+        JSON response with performance data or error message
+    """
     days = request.args.get('days', 30, type=int)
     db = get_database()
     
     try:
-        # First try to get closed trades performance
+        # First try to get closed trades performance from database
         performance = db.calculate_performance_metrics(symbol, days)
         
-        # If no closed trades, calculate from open positions with current prices
+        # If no closed trades, calculate unrealized performance from open positions
         if performance.get('total_trades', 0) == 0:
             from binance.client import Client
             import os
@@ -56,7 +89,7 @@ def get_performance(symbol):
                     ticker = client.get_symbol_ticker(symbol=symbol)
                     current_price = float(ticker['price'])
                     
-                    # Calculate unrealized performance from open trades
+                    # Calculate unrealized performance from open trades using live prices
                     with db.get_connection() as conn:
                         query = '''
                             SELECT * FROM trades 
@@ -75,7 +108,7 @@ def get_performance(symbol):
                             losses = []
                             
                             for trade in open_trades:
-                                # Calculate unrealized PnL
+                                # Calculate unrealized PnL based on current market price
                                 if trade['side'] == 'BUY':
                                     pnl = (current_price - trade['entry_price']) * trade['quantity']
                                 else:  # SELL
@@ -125,7 +158,20 @@ def get_performance(symbol):
 
 @app.route('/api/signals/<symbol>')
 def get_signals(symbol):
-    """API endpoint to get recent signals"""
+    """API endpoint to get recent signals
+    
+    Retrieves recent trading signals with timestamps, strengths,
+    and analysis reasons from the database.
+    
+    Args:
+        symbol: Trading pair symbol
+        
+    Query Parameters:
+        limit: Maximum number of signals to return (default: 20)
+        
+    Returns:
+        JSON response with signal data array
+    """
     limit = request.args.get('limit', 20, type=int)
     db = get_database()
     
@@ -144,7 +190,20 @@ def get_signals(symbol):
 
 @app.route('/api/trades/<symbol>')
 def get_trades(symbol):
-    """API endpoint to get recent trades"""
+    """API endpoint to get recent trades
+    
+    Fetches recent trading activity including entry/exit prices,
+    quantities, PnL, and trade status.
+    
+    Args:
+        symbol: Trading pair symbol
+        
+    Query Parameters:
+        limit: Maximum number of trades to return (default: 20)
+        
+    Returns:
+        JSON response with trade history data
+    """
     limit = request.args.get('limit', 20, type=int)
     db = get_database()
     
@@ -163,7 +222,20 @@ def get_trades(symbol):
 
 @app.route('/api/open-positions/<symbol>')
 def get_open_positions(symbol):
-    """API endpoint to get live open positions from Binance"""
+    """API endpoint to get live open positions from Binance
+    
+    Retrieves current position information from both the local database
+    and live Binance API. Provides real-time PnL, position size,
+    entry prices, and risk metrics.
+    
+    Args:
+        symbol: Trading pair symbol
+        
+    Returns:
+        JSON response containing:
+        - database_positions: Local database records
+        - live_positions: Real-time Binance position data
+    """
     from binance.client import Client
     import os
     from dotenv import load_dotenv
@@ -172,10 +244,10 @@ def get_open_positions(symbol):
     db = get_database()
     
     try:
-        # Get positions from database
+        # Get positions from database - Local trade records
         db_positions = db.get_open_trades(symbol)
         
-        # Also get live positions from Binance API
+        # Also get live positions from Binance API - Real-time exchange data
         try:
             api_key = os.getenv('BINANCE_API_KEY')
             secret_key = os.getenv('BINANCE_SECRET_KEY')
@@ -184,7 +256,7 @@ def get_open_positions(symbol):
                 client = Client(api_key, secret_key, testnet=False)
                 live_positions = client.futures_position_information()
                 
-                # Filter for requested symbol and non-zero positions
+                # Filter for requested symbol and non-zero positions from Binance
                 binance_positions = []
                 for pos in live_positions:
                     if pos['symbol'] == symbol and float(pos['positionAmt']) != 0:
@@ -192,7 +264,7 @@ def get_open_positions(symbol):
                         entry_price = float(pos['entryPrice'])
                         mark_price = float(pos['markPrice'])
                         
-                        # Calculate PnL percentage with leverage
+                        # Calculate PnL percentage with leverage (assuming 50x)
                         if entry_price > 0:
                             if position_amt > 0:  # LONG
                                 pnl_percentage = ((mark_price - entry_price) / entry_price) * 100 * 50  # Assuming 50x leverage
@@ -245,7 +317,20 @@ def get_open_positions(symbol):
 
 @app.route('/api/chart-data/<symbol>')
 def get_chart_data(symbol):
-    """API endpoint to get chart data for visualization"""
+    """API endpoint to get chart data for visualization
+    
+    Provides historical trade data and signal data formatted for
+    chart visualization including cumulative PnL tracking.
+    
+    Args:
+        symbol: Trading pair symbol
+        
+    Query Parameters:
+        days: Historical period to analyze (default: 30)
+        
+    Returns:
+        JSON response with trades and signals data for charting
+    """
     days = request.args.get('days', 30, type=int)
     db = get_database()
     
@@ -299,7 +384,17 @@ def get_chart_data(symbol):
 
 @app.route('/api/system-stats')
 def get_system_stats():
-    """API endpoint to get system statistics"""
+    """API endpoint to get system statistics
+    
+    Returns overall system health and activity metrics including:
+    - Total signals and trades count
+    - Open position count
+    - Last signal timestamp
+    - Available trading symbols
+    
+    Returns:
+        JSON response with system statistics
+    """
     db = get_database()
     
     try:
@@ -338,7 +433,25 @@ def get_system_stats():
 
 @app.route('/api/projected-balance/<symbol>')
 def get_projected_balance(symbol):
-    """API endpoint to get projected account balance based on performance trends"""
+    """API endpoint to get projected account balance based on performance trends
+    
+    Calculates future account balance projections using historical performance
+    data and various scenarios (conservative, realistic, optimistic, pessimistic).
+    Includes RL enhancement projections when available.
+    
+    Args:
+        symbol: Trading pair symbol
+        
+    Query Parameters:
+        days: Historical period for analysis (default: 30)
+        projection_days: Future projection period (default: 30)
+        
+    Returns:
+        JSON response with:
+        - current_balance: Current account balance from Binance
+        - projections: Array of different scenario projections
+        - performance_stats: Historical performance metrics
+    """
     days = request.args.get('days', 30, type=int)
     projection_days = request.args.get('projection_days', 30, type=int)
     
@@ -362,11 +475,11 @@ def get_projected_balance(symbol):
         
         client = Client(api_key, secret_key, testnet=False)
         
-        # Get current account balance (check both Spot and Futures)
+        # Get current account balance from both Spot and Futures accounts
         current_balance = 0.0
         
         try:
-            # Check Futures account balance (total wallet balance, not just available)
+            # Check Futures account balance including margin used in positions
             futures_account = client.futures_account()
             
             # Get total wallet balance (includes margin used in positions)
@@ -385,7 +498,7 @@ def get_projected_balance(symbol):
             logger.warning(f"Could not get futures balance: {e}")
         
         try:
-            # Check Spot account USDC balance
+            # Check Spot account USDC balance (free + locked)
             account = client.get_account()
             for asset in account['balances']:
                 if asset['asset'] == 'USDC':
@@ -398,10 +511,10 @@ def get_projected_balance(symbol):
             
         logger.info(f"Total account balance: ${current_balance}")
         
-        # Get historical performance
+        # Get historical performance metrics for projection calculations
         performance = db.calculate_performance_metrics(symbol, days)
         
-        # Calculate daily performance metrics
+        # Calculate daily performance metrics for trend analysis
         with db.get_connection() as conn:
             cursor = conn.execute('''
                 SELECT 
@@ -416,11 +529,11 @@ def get_projected_balance(symbol):
             
             daily_performance = cursor.fetchall()
         
-        # Calculate projections
+        # Calculate future balance projections using multiple scenarios
         projections = []
         
         if daily_performance:
-            # Calculate daily PnL statistics
+            # Calculate daily PnL statistics for projection modeling
             daily_pnls = [row['daily_pnl'] for row in daily_performance if row['daily_pnl'] != 0]
             
             if daily_pnls:
@@ -428,7 +541,7 @@ def get_projected_balance(symbol):
                 std_daily_pnl = np.std(daily_pnls)
                 win_rate = performance.get('win_rate', 0) / 100.0
                 
-                # Create different projection scenarios
+                # Create different projection scenarios based on historical performance
                 scenarios = {
                     'conservative': avg_daily_pnl * 0.5,  # 50% of historical performance
                     'realistic': avg_daily_pnl * 0.8,    # 80% of historical performance
@@ -436,7 +549,7 @@ def get_projected_balance(symbol):
                     'pessimistic': avg_daily_pnl * 0.2   # 20% of historical performance
                 }
                 
-                # Generate daily projections for each scenario
+                # Generate daily projections for each scenario over time period
                 for scenario_name, daily_return in scenarios.items():
                     projected_balance = current_balance
                     scenario_projections = []
@@ -467,7 +580,7 @@ def get_projected_balance(symbol):
                         'projections': scenario_projections
                     })
             
-            # Add RL enhancement projection if RL bot is active
+            # Add RL enhancement projection assuming improved performance
             try:
                 # Check if RL bot is running and has better performance potential
                 rl_multiplier = 1.5  # Assume RL can improve performance by 50%
@@ -520,7 +633,20 @@ def get_projected_balance(symbol):
 
 @app.route('/api/rl-decisions/<symbol>')
 def get_rl_decisions(symbol):
-    """API endpoint to get recent RL-enhanced decisions"""
+    """API endpoint to get recent RL-enhanced decisions
+    
+    Retrieves recent decisions made by the RL enhancement system
+    including confidence levels and decision reasoning.
+    
+    Args:
+        symbol: Trading pair symbol
+        
+    Query Parameters:
+        limit: Maximum number of decisions to return (default: 5)
+        
+    Returns:
+        JSON response with RL decision data
+    """
     limit = request.args.get('limit', 5, type=int)
     db = get_database()
     
@@ -539,18 +665,29 @@ def get_rl_decisions(symbol):
 
 @app.route('/logs')
 def logs_page():
-    """Live logs streaming page"""
+    """Live logs streaming page
+    
+    Renders the log monitoring interface for real-time bot activity tracking.
+    """
     return render_template('logs.html')
 
 @app.route('/api/logs/stream')
 def stream_logs():
-    """API endpoint to stream live logs"""
+    """API endpoint to stream live logs
+    
+    Provides Server-Sent Events (SSE) stream of real-time log entries
+    from multiple log files. Monitors RL bot and trading bot logs
+    continuously and streams new entries as they appear.
+    
+    Returns:
+        SSE stream with JSON-formatted log entries
+    """
     from flask import Response
     import time
     import os
     
     def generate_logs():
-        # Keep track of last read position for each log file
+        # Keep track of file positions to stream only new log entries
         log_files = {
             'logs/rl_bot_error.log': 0,
             'trading_bot.log': 0
@@ -559,7 +696,7 @@ def stream_logs():
         while True:
             new_logs = []
             
-            # Read new content from each log file
+            # Read new content from each monitored log file
             for log_file, last_pos in log_files.items():
                 if os.path.exists(log_file):
                     try:
@@ -579,7 +716,7 @@ def stream_logs():
                     except Exception as e:
                         logger.error(f"Error reading {log_file}: {e}")
             
-            # Send new logs if any
+            # Send new log entries to client via Server-Sent Events
             if new_logs:
                 for log_entry in new_logs:
                     yield f"data: {json.dumps(log_entry)}\n\n"
@@ -590,14 +727,25 @@ def stream_logs():
 
 @app.route('/api/logs/recent')
 def get_recent_logs():
-    """API endpoint to get recent logs"""
+    """API endpoint to get recent logs
+    
+    Fetches the most recent log entries from specified log files
+    for display in the dashboard.
+    
+    Query Parameters:
+        lines: Number of log lines to retrieve (default: 50)
+        source: Log source ('rl_bot', 'trading_bot', or 'all')
+        
+    Returns:
+        JSON response with recent log entries
+    """
     lines = request.args.get('lines', 50, type=int)
     log_source = request.args.get('source', 'rl_bot', type=str)
     
     try:
         recent_logs = []
         
-        # Determine which log files to read based on source
+        # Determine which log files to read based on requested source
         if log_source == 'rl_bot':
             log_files = ['logs/rl_bot_error.log', 'logs/rl_bot_main.log']
         elif log_source == 'trading_bot':
@@ -624,7 +772,7 @@ def get_recent_logs():
                 except Exception as e:
                     logger.error(f"Error reading {log_file}: {e}")
         
-        # Sort by timestamp (most recent first)
+        # Sort log entries by timestamp with most recent first
         recent_logs.sort(key=lambda x: x.get('timestamp', 0), reverse=True)
         
         return jsonify({
@@ -641,7 +789,17 @@ def get_recent_logs():
 
 @app.route('/api/bot-pause', methods=['POST'])
 def toggle_bot_pause():
-    """API endpoint to pause/resume the RL bot"""
+    """API endpoint to pause/resume the RL bot
+    
+    Controls bot trading activity by creating/removing a pause flag file.
+    When paused, the bot continues generating signals but stops executing trades.
+    
+    Request Body:
+        action: 'pause', 'resume', or 'toggle'
+        
+    Returns:
+        JSON response with current pause status
+    """
     try:
         action = request.json.get('action', 'toggle')
         pause_file = 'bot_pause.flag'
@@ -674,7 +832,14 @@ def toggle_bot_pause():
 
 @app.route('/api/bot-pause-status')
 def get_bot_pause_status():
-    """API endpoint to get current pause status"""
+    """API endpoint to get current pause status
+    
+    Checks for the existence of the pause flag file to determine
+    if the bot is currently paused.
+    
+    Returns:
+        JSON response with pause status and timestamp
+    """
     try:
         pause_file = 'bot_pause.flag'
         is_paused = os.path.exists(pause_file)
@@ -705,7 +870,21 @@ def get_bot_pause_status():
 
 @app.route('/api/rl-bot-status')
 def get_rl_bot_status():
-    """API endpoint to get real-time RL bot status and latest decisions"""
+    """API endpoint to get real-time RL bot status and latest decisions
+    
+    Provides comprehensive bot status information by:
+    - Checking if bot process is running via system commands
+    - Parsing recent log entries for current state
+    - Extracting position, market data, and signal information
+    - Retrieving latest RL decisions from database
+    
+    Returns:
+        JSON response with complete bot status including:
+        - Process status (running/stopped, PID)
+        - Current position information
+        - Latest market data and signals
+        - Recent RL decisions and reasoning
+    """
     try:
         import subprocess
         import re
@@ -841,4 +1020,6 @@ def get_rl_bot_status():
 
 
 if __name__ == '__main__':
+    # Start Flask development server
+    # Production deployments should use WSGI server like Gunicorn
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)

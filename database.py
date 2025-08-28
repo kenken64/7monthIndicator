@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
 Database module for Binance Futures Trading Bot
-Handles SQLite database operations for signals and trades
+
+A comprehensive SQLite database handler that manages all trading bot data including:
+- Trading signals and their analysis results
+- Executed trades with entry/exit prices and PnL tracking
+- Market data (OHLCV) for historical analysis
+- Performance metrics and statistics
+- Automatic schema migrations and data cleanup
+
+The module provides a singleton pattern for database access and uses
+context managers for safe transaction handling.
 """
 
 import sqlite3
@@ -15,15 +24,33 @@ import os
 logger = logging.getLogger(__name__)
 
 class TradingDatabase:
-    """SQLite database handler for trading bot signals and trades"""
+    """SQLite database handler for trading bot signals and trades
+    
+    This class manages all database operations for the trading bot including:
+    - Table creation and schema migrations
+    - Signal storage with RL enhancement flags
+    - Trade execution tracking with PnL calculations
+    - Performance metrics calculation
+    - Data export and cleanup operations
+    
+    Uses SQLite with row factory for dictionary-like access to records.
+    """
     
     def __init__(self, db_path: str = "trading_bot.db"):
-        """Initialize database connection and create tables"""
+        """Initialize database connection and create tables
+        
+        Args:
+            db_path: Path to SQLite database file (default: 'trading_bot.db')
+        """
         self.db_path = db_path
         self.init_database()
     
     def init_database(self):
-        """Create database tables if they don't exist"""
+        """Create database tables if they don't exist
+        
+        Initializes the complete database schema including all tables,
+        indexes, and performs any necessary schema migrations.
+        """
         with self.get_connection() as conn:
             self.create_tables(conn)
             self.migrate_schema(conn)
@@ -31,7 +58,14 @@ class TradingDatabase:
     
     @contextmanager
     def get_connection(self):
-        """Context manager for database connections"""
+        """Context manager for database connections
+        
+        Provides safe database access with automatic transaction handling.
+        Commits on success, rolls back on exceptions, and always closes connections.
+        
+        Yields:
+            sqlite3.Connection: Database connection with row factory enabled
+        """
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row  # Enable column access by name
         try:
@@ -45,7 +79,14 @@ class TradingDatabase:
             conn.close()
     
     def migrate_schema(self, conn):
-        """Migrate database schema to the latest version"""
+        """Migrate database schema to the latest version
+        
+        Handles database schema evolution by adding new columns or tables
+        as needed for new features without breaking existing data.
+        
+        Args:
+            conn: SQLite database connection
+        """
         try:
             # Check if rl_enhanced column exists
             cursor = conn.execute("PRAGMA table_info(signals)")
@@ -57,9 +98,20 @@ class TradingDatabase:
             logger.error(f"Error migrating database schema: {e}")
     
     def create_tables(self, conn):
-        """Create all necessary database tables"""
+        """Create all necessary database tables
         
-        # Signals table - stores all signal calculations
+        Creates the complete database schema with:
+        - signals: Trading signal analysis results
+        - trades: Executed trade records with PnL tracking
+        - market_data: OHLCV data for analysis
+        - performance: Daily performance metrics
+        - Indexes for query optimization
+        
+        Args:
+            conn: SQLite database connection
+        """
+        
+        # Signals table - stores all signal calculations with RL enhancement flags
         conn.execute('''
             CREATE TABLE IF NOT EXISTS signals (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +128,7 @@ class TradingDatabase:
             )
         ''')
         
-        # Trades table - stores executed trades
+        # Trades table - stores executed trades with comprehensive PnL tracking
         conn.execute('''
             CREATE TABLE IF NOT EXISTS trades (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -102,7 +154,7 @@ class TradingDatabase:
             )
         ''')
         
-        # Market data table - stores OHLCV data for analysis
+        # Market data table - stores OHLCV candlestick data for technical analysis
         conn.execute('''
             CREATE TABLE IF NOT EXISTS market_data (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -119,7 +171,7 @@ class TradingDatabase:
             )
         ''')
         
-        # Performance metrics table
+        # Performance metrics table - daily aggregated trading statistics
         conn.execute('''
             CREATE TABLE IF NOT EXISTS performance (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -139,7 +191,7 @@ class TradingDatabase:
             )
         ''')
         
-        # Create indexes for better performance
+        # Create indexes for query optimization on frequently accessed columns
         conn.execute('CREATE INDEX IF NOT EXISTS idx_signals_timestamp ON signals(timestamp)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals(symbol)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp)')
@@ -150,7 +202,19 @@ class TradingDatabase:
         logger.info("Database tables created/verified")
     
     def store_signal(self, symbol: str, price: float, signal_data: Dict) -> int:
-        """Store signal analysis in database"""
+        """Store signal analysis in database
+        
+        Records trading signal with all analysis data including RL enhancements,
+        technical indicators, and reasoning for audit trail.
+        
+        Args:
+            symbol: Trading pair symbol (e.g., 'SUIUSDC')
+            price: Current market price when signal generated
+            signal_data: Dictionary containing signal details, strength, reasons, and indicators
+            
+        Returns:
+            int: Database ID of stored signal (0 if failed)
+        """
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute('''
@@ -175,7 +239,25 @@ class TradingDatabase:
     def store_trade(self, signal_id: int, symbol: str, side: str, quantity: float, 
                    entry_price: float, leverage: int, position_percentage: float, 
                    order_id: str = None, liquidation_price: float = None) -> int:
-        """Store executed trade in database"""
+        """Store executed trade in database
+        
+        Records a new trade execution linking it to the originating signal.
+        Also marks the originating signal as executed.
+        
+        Args:
+            signal_id: ID of signal that triggered this trade
+            symbol: Trading pair symbol
+            side: Trade direction ('BUY' or 'SELL')
+            quantity: Position size
+            entry_price: Price at which position was entered
+            leverage: Futures leverage used
+            position_percentage: Percentage of account used for this trade
+            order_id: Exchange order ID for tracking
+            liquidation_price: Calculated liquidation price
+            
+        Returns:
+            int: Database ID of stored trade (0 if failed)
+        """
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute('''
@@ -195,7 +277,7 @@ class TradingDatabase:
                 ))
                 trade_id = cursor.lastrowid
                 
-                # Mark signal as executed
+                # Mark signal as executed to prevent duplicate trades
                 conn.execute('UPDATE signals SET executed = TRUE WHERE id = ?', (signal_id,))
                 
                 logger.info(f"Trade stored: ID={trade_id}, Symbol={symbol}, Side={side}, Quantity={quantity}")
@@ -206,7 +288,18 @@ class TradingDatabase:
     
     def update_trade_exit(self, trade_id: int, exit_price: float, pnl: float, 
                          pnl_percentage: float, status: str = 'CLOSED'):
-        """Update trade with exit information"""
+        """Update trade with exit information
+        
+        Updates an existing trade record with closing details including
+        exit price and calculated PnL metrics.
+        
+        Args:
+            trade_id: Database ID of trade to update
+            exit_price: Price at which position was closed
+            pnl: Profit/Loss amount in account currency
+            pnl_percentage: PnL as percentage of position size
+            status: New trade status (default: 'CLOSED')
+        """
         try:
             with self.get_connection() as conn:
                 conn.execute('''
@@ -220,7 +313,16 @@ class TradingDatabase:
             logger.error(f"Error updating trade: {e}")
     
     def store_market_data(self, symbol: str, timeframe: str, ohlcv_data: List[Dict]):
-        """Store market data for analysis"""
+        """Store market data for analysis
+        
+        Stores OHLCV candlestick data for historical analysis and backtesting.
+        Uses INSERT OR REPLACE to handle duplicate timestamps.
+        
+        Args:
+            symbol: Trading pair symbol
+            timeframe: Candlestick timeframe (e.g., '5m', '1h')
+            ohlcv_data: List of candlestick dictionaries with OHLCV data
+        """
         try:
             with self.get_connection() as conn:
                 for candle in ohlcv_data:
@@ -243,7 +345,18 @@ class TradingDatabase:
             logger.error(f"Error storing market data: {e}")
     
     def get_recent_signals(self, symbol: str = None, limit: int = 10) -> List[Dict]:
-        """Get recent signals from database"""
+        """Get recent signals from database
+        
+        Retrieves recent trading signals with parsed JSON data for display
+        in dashboards and analysis tools.
+        
+        Args:
+            symbol: Filter by trading pair (None for all symbols)
+            limit: Maximum number of signals to return
+            
+        Returns:
+            List[Dict]: Recent signals with parsed reasons and indicators
+        """
         try:
             with self.get_connection() as conn:
                 query = '''
@@ -265,7 +378,18 @@ class TradingDatabase:
             return []
     
     def get_recent_rl_signals(self, symbol: str = None, limit: int = 5) -> List[Dict]:
-        """Get recent RL-enhanced signals from the database"""
+        """Get recent RL-enhanced signals from the database
+        
+        Filters for signals that have been processed by the RL enhancement
+        system, useful for analyzing RL decision patterns.
+        
+        Args:
+            symbol: Filter by trading pair (None for all symbols)
+            limit: Maximum number of RL signals to return
+            
+        Returns:
+            List[Dict]: Recent RL-enhanced signals with parsed data
+        """
         try:
             with self.get_connection() as conn:
                 query = '''
@@ -287,7 +411,18 @@ class TradingDatabase:
             return []
 
     def get_recent_trades(self, symbol: str = None, limit: int = 10) -> List[Dict]:
-        """Get recent trades from database"""
+        """Get recent trades from database
+        
+        Retrieves recent trade executions with linked signal information
+        for performance analysis and dashboard display.
+        
+        Args:
+            symbol: Filter by trading pair (None for all symbols)
+            limit: Maximum number of trades to return
+            
+        Returns:
+            List[Dict]: Recent trades with signal details
+        """
         try:
             with self.get_connection() as conn:
                 query = '''
@@ -305,7 +440,17 @@ class TradingDatabase:
             return []
     
     def get_open_trades(self, symbol: str = None) -> List[Dict]:
-        """Get open trades"""
+        """Get currently open trades
+        
+        Retrieves all trades with 'OPEN' status for position tracking
+        and risk management.
+        
+        Args:
+            symbol: Filter by trading pair (None for all symbols)
+            
+        Returns:
+            List[Dict]: Currently open trades
+        """
         try:
             with self.get_connection() as conn:
                 query = '''
@@ -320,7 +465,18 @@ class TradingDatabase:
             return []
     
     def calculate_performance_metrics(self, symbol: str, days: int = 30) -> Dict:
-        """Calculate performance metrics for given period"""
+        """Calculate comprehensive performance metrics for given period
+        
+        Computes detailed trading statistics including win rates, PnL metrics,
+        and future projections based on historical performance.
+        
+        Args:
+            symbol: Trading pair to analyze
+            days: Historical period to analyze
+            
+        Returns:
+            Dict: Complete performance metrics with projections
+        """
         try:
             with self.get_connection() as conn:
                 query = '''
@@ -343,7 +499,7 @@ class TradingDatabase:
                 if row and row['total_trades'] > 0:
                     win_rate = (row['winning_trades'] / row['total_trades']) * 100
                     
-                    # Calculate projections based on historical performance
+                    # Calculate future projections using historical performance trends
                     avg_daily_pnl = (row['total_pnl'] or 0) / days if days > 0 else 0
                     avg_win = row['avg_win'] or 0
                     avg_loss = row['avg_loss'] or 0
@@ -390,7 +546,16 @@ class TradingDatabase:
             return {'error': str(e)}
     
     def cleanup_old_data(self, days_to_keep: int = 90):
-        """Clean up old data to keep database size manageable"""
+        """Clean up old data to keep database size manageable
+        
+        Removes old records based on data retention policies:
+        - Signals: Keep for specified days (default 90)
+        - Market data: Keep for 30 days
+        - Closed trades: Keep for 1 year, open trades forever
+        
+        Args:
+            days_to_keep: Number of days to retain signal data
+        """
         try:
             with self.get_connection() as conn:
                 # Keep signals for 90 days
@@ -416,7 +581,18 @@ class TradingDatabase:
             logger.error(f"Error cleaning up old data: {e}")
     
     def export_data(self, table: str, filename: str = None) -> str:
-        """Export table data to CSV"""
+        """Export table data to CSV file
+        
+        Exports complete table contents to CSV format for external analysis
+        or backup purposes.
+        
+        Args:
+            table: Name of table to export
+            filename: Output filename (auto-generated if None)
+            
+        Returns:
+            str: Path to exported file (None if failed)
+        """
         import csv
         
         if not filename:
@@ -443,7 +619,18 @@ class TradingDatabase:
             return None
 
     def get_all_trades(self, symbol: str, exclude_manual: bool = False) -> List[Dict]:
-        """Get all trades for analysis, optionally excluding manual closures"""
+        """Get all trades for analysis, optionally excluding manual closures
+        
+        Retrieves complete trade history for position analysis and reconciliation.
+        Can exclude manually created closure records to analyze only bot trades.
+        
+        Args:
+            symbol: Trading pair symbol
+            exclude_manual: Whether to exclude manual closure records
+            
+        Returns:
+            List[Dict]: Historical trade records
+        """
         try:
             with self.get_connection() as conn:
                 if exclude_manual:
@@ -498,7 +685,18 @@ class TradingDatabase:
             return 0
 
     def record_manual_closure(self, closure: Dict, symbol: str) -> bool:
-        """Record an individual manual closure in the database"""
+        """Record an individual manual closure in the database
+        
+        Creates a trade record for manually closed positions that were
+        detected during position reconciliation.
+        
+        Args:
+            closure: Dictionary with closure details (timestamp, amount, prices, type)
+            symbol: Trading pair symbol
+            
+        Returns:
+            bool: True if recorded successfully, False if already exists or failed
+        """
         try:
             with self.get_connection() as conn:
                 # Check if already exists
@@ -548,11 +746,21 @@ class TradingDatabase:
             logger.error(f"Error recording manual closure: {e}")
             return False
 
-# Singleton instance
+# Singleton instance - ensures only one database connection across the application
 _db_instance = None
 
 def get_database(db_path: str = "trading_bot.db") -> TradingDatabase:
-    """Get singleton database instance"""
+    """Get singleton database instance
+    
+    Returns the global database instance, creating it if necessary.
+    Ensures only one database connection is used throughout the application.
+    
+    Args:
+        db_path: Path to database file (only used on first call)
+        
+    Returns:
+        TradingDatabase: Singleton database instance
+    """
     global _db_instance
     if _db_instance is None:
         _db_instance = TradingDatabase(db_path)

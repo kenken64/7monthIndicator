@@ -49,9 +49,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class TelegramNotifier:
-    """Handle Telegram notifications for trading signals"""
+    """Handle Telegram notifications for trading signals
+    
+    This class manages sending trading notifications to Telegram channels/chats.
+    It handles authentication, message formatting, and error handling for
+    communication with the Telegram Bot API.
+    """
     
     def __init__(self):
+        """Initialize Telegram notifier with credentials from environment variables"""
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.chat_id = os.getenv('TELEGRAM_CHAT_ID', '@bnbfutura_bot')
         self.enabled = bool(self.bot_token and self.bot_token.strip())
@@ -62,7 +68,15 @@ class TelegramNotifier:
             logger.warning("📱 Telegram notifications disabled - no bot token provided")
     
     def send_message(self, message: str, parse_mode: str = 'HTML') -> bool:
-        """Send message to Telegram bot"""
+        """Send message to Telegram bot
+        
+        Args:
+            message: The message text to send
+            parse_mode: Message formatting mode ('HTML' or 'Markdown')
+            
+        Returns:
+            bool: True if message sent successfully, False otherwise
+        """
         if not self.enabled:
             return False
         
@@ -94,7 +108,19 @@ class TelegramNotifier:
             return False
     
     def send_signal_notification(self, signal_data: Dict, current_price: float, position_info: Dict = None) -> bool:
-        """Send RL signal notification to Telegram"""
+        """Send RL signal notification to Telegram
+        
+        Creates a formatted trading signal message with current market data,
+        RL enhancement status, position information, and analysis reasons.
+        
+        Args:
+            signal_data: Dictionary containing signal strength, direction, and analysis
+            current_price: Current market price of the trading pair
+            position_info: Optional current position details for context
+            
+        Returns:
+            bool: True if notification sent successfully, False otherwise
+        """
         if not self.enabled:
             return False
         
@@ -139,16 +165,43 @@ class TelegramNotifier:
             return False
 
 class TechnicalIndicators:
-    """Calculate technical indicators for trading signals"""
+    """Calculate technical indicators for trading signals
+    
+    This class provides static methods for calculating common technical analysis
+    indicators including EMA, RSI, MACD, and VWAP. All methods are stateless
+    and work with pandas Series data structures.
+    """
     
     @staticmethod
     def ema(data: pd.Series, period: int) -> pd.Series:
-        """Calculate Exponential Moving Average"""
+        """Calculate Exponential Moving Average
+        
+        EMA gives more weight to recent prices, making it more responsive
+        to price changes than simple moving average.
+        
+        Args:
+            data: Time series data (usually closing prices)
+            period: Number of periods for the EMA calculation
+            
+        Returns:
+            pd.Series: EMA values for each data point
+        """
         return data.ewm(span=period).mean()
     
     @staticmethod
     def rsi(data: pd.Series, period: int = 14) -> pd.Series:
-        """Calculate Relative Strength Index"""
+        """Calculate Relative Strength Index
+        
+        RSI oscillates between 0 and 100. Values above 70 indicate overbought
+        conditions, while values below 30 indicate oversold conditions.
+        
+        Args:
+            data: Time series data (usually closing prices)
+            period: Number of periods for RSI calculation (default: 14)
+            
+        Returns:
+            pd.Series: RSI values for each data point
+        """
         delta = data.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
@@ -157,7 +210,20 @@ class TechnicalIndicators:
     
     @staticmethod
     def macd(data: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Dict[str, pd.Series]:
-        """Calculate MACD"""
+        """Calculate MACD (Moving Average Convergence Divergence)
+        
+        MACD consists of the MACD line (fast EMA - slow EMA), signal line
+        (EMA of MACD line), and histogram (MACD line - signal line).
+        
+        Args:
+            data: Time series data (usually closing prices)
+            fast: Fast EMA period (default: 12)
+            slow: Slow EMA period (default: 26)
+            signal: Signal line EMA period (default: 9)
+            
+        Returns:
+            Dict containing 'macd', 'macd_signal', and 'macd_histogram' Series
+        """
         exp1 = data.ewm(span=fast).mean()
         exp2 = data.ewm(span=slow).mean()
         macd_line = exp1 - exp2
@@ -172,15 +238,48 @@ class TechnicalIndicators:
     
     @staticmethod
     def vwap(high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series) -> pd.Series:
-        """Calculate Volume Weighted Average Price"""
+        """Calculate Volume Weighted Average Price
+        
+        VWAP represents the average price weighted by volume. It's used to
+        determine if current price is above or below the average trading price.
+        
+        Args:
+            high: High prices for each period
+            low: Low prices for each period  
+            close: Closing prices for each period
+            volume: Volume for each period
+            
+        Returns:
+            pd.Series: VWAP values for each period
+        """
         typical_price = (high + low + close) / 3
         return (typical_price * volume).cumsum() / volume.cumsum()
 
 class RLEnhancedBinanceFuturesBot:
-    """RL-Enhanced Binance Futures Trading Bot"""
+    """RL-Enhanced Binance Futures Trading Bot
+    
+    A comprehensive trading bot that integrates Reinforcement Learning enhancements
+    with traditional technical analysis. Features include:
+    - RL-enhanced signal generation and position sizing
+    - Risk management with take profit and stop loss
+    - Position tracking and reconciliation with Binance
+    - Telegram notifications
+    - Database integration for trade and signal storage
+    - Pause/resume functionality for manual control
+    """
     
     def __init__(self, symbol: str = 'SUIUSDC', leverage: int = 50, position_percentage: float = 2.0):
-        # API Setup
+        """Initialize the RL-Enhanced Trading Bot
+        
+        Sets up API connections, trading parameters, database connections,
+        and performs initial position reconciliation.
+        
+        Args:
+            symbol: Trading pair symbol (e.g., 'SUIUSDC')
+            leverage: Futures leverage multiplier (default: 50x)
+            position_percentage: Percentage of account balance to use per trade (default: 2%)
+        """
+        # API Setup - Initialize Binance futures client with credentials
         self.api_key = os.getenv('BINANCE_API_KEY')
         self.secret_key = os.getenv('BINANCE_SECRET_KEY')
         
@@ -189,30 +288,32 @@ class RLEnhancedBinanceFuturesBot:
         
         self.client = Client(self.api_key, self.secret_key, testnet=False)
         
-        # Trading Parameters - MUCH SAFER DEFAULTS
+        # Trading Parameters - Conservative defaults for safety
+        # Position size reduced from original 51% to 2% for risk management
         self.symbol = symbol
         self.leverage = leverage
         self.position_percentage = position_percentage  # 2% instead of 51%!
         self.take_profit_percent = 15.0  # 15% profit target
         self.stop_loss_percent = 5.0    # 5% loss limit
         
-        # State tracking
+        # State tracking - Monitor current positions and entry points
         self.position_side = None  # LONG, SHORT, or None
         self.position_size = 0
         self.entry_price = 0
         
-        # Order ID tracking - to only close bot's own positions
+        # Order ID tracking - Ensures bot only manages positions it created
+        # This prevents interference with manual trades or other trading systems
         self.bot_order_ids = set()  # Track order IDs created by this bot
         self.position_order_id = None  # The order ID that created current position
         
-        # Pause/Resume functionality
+        # Pause/Resume functionality - Allows temporary suspension of trading
         self.paused = False
         self.pause_file = 'bot_pause.flag'
         
-        # Database
+        # Database - SQLite connection for storing trades and signals
         self.db = get_database()
         
-        # Telegram notifications
+        # Telegram notifications - Real-time alerts for trading activity
         self.telegram = TelegramNotifier()
         
         logger.info(f"🤖 RL-Enhanced Bot initialized for {symbol}")
@@ -247,7 +348,18 @@ class RLEnhancedBinanceFuturesBot:
             logger.error(f"📱 Startup notification error: {e}")
     
     def get_klines(self, interval: str = '5m', limit: int = 200) -> pd.DataFrame:
-        """Fetch kline data from Binance"""
+        """Fetch kline (candlestick) data from Binance
+        
+        Retrieves OHLCV data for the specified symbol and converts it to
+        a pandas DataFrame with proper data types and timestamp formatting.
+        
+        Args:
+            interval: Kline interval (e.g., '1m', '5m', '1h', '1d')
+            limit: Number of klines to retrieve (max 1000)
+            
+        Returns:
+            pd.DataFrame: OHLCV data with timestamp, open, high, low, close, volume
+        """
         try:
             klines = self.client.futures_klines(
                 symbol=self.symbol,
@@ -275,7 +387,17 @@ class RLEnhancedBinanceFuturesBot:
             return pd.DataFrame()
     
     def calculate_indicators(self, df: pd.DataFrame) -> Dict:
-        """Calculate all technical indicators"""
+        """Calculate all technical indicators for the trading strategy
+        
+        Computes EMAs (9, 21, 50, 200), RSI, MACD, and VWAP indicators
+        used for signal generation and market analysis.
+        
+        Args:
+            df: DataFrame containing OHLCV data
+            
+        Returns:
+            Dict: Dictionary containing all calculated indicators as pandas Series
+        """
         if df.empty or len(df) < 50:
             return {}
         
@@ -300,12 +422,28 @@ class RLEnhancedBinanceFuturesBot:
         return indicators
     
     def generate_signals(self, df: pd.DataFrame, indicators: Dict) -> Dict:
-        """RL-Enhanced signal generation"""
+        """RL-Enhanced signal generation
+        
+        Combines traditional technical analysis signals with RL enhancements.
+        The process:
+        1. Generate base signals using technical indicators
+        2. Apply RL enhancement if available for improved decision making
+        3. Store signal data in database for tracking
+        
+        Args:
+            df: DataFrame containing OHLCV market data
+            indicators: Dictionary of calculated technical indicators
+            
+        Returns:
+            Dict: Complete signal data including direction, strength, reasons, and RL status
+        """
         
         # Get original signal using traditional logic
+        # Traditional analysis provides base signal before RL enhancement
         original_signal_data = self._generate_original_signals(df, indicators)
         
         # Apply RL enhancement if available
+        # RL system can modify signal strength and direction based on learned patterns
         if RL_ENHANCEMENT_ENABLED:
             try:
                 # Prepare indicators for RL
@@ -319,7 +457,7 @@ class RLEnhancedBinanceFuturesBot:
                     'ema_21': indicators['ema_21'].iloc[-1]
                 }
                 
-                # Get RL enhancement
+                # Get RL enhancement - Pass indicators to RL system for analysis
                 enhanced = rl_generator(original_signal_data, indicator_dict)
                 
                 # Log the enhancement
@@ -329,7 +467,7 @@ class RLEnhancedBinanceFuturesBot:
                 logger.info(f"   Enhanced: Signal={enhanced['signal']}, Strength={enhanced['strength']}")
                 logger.info(f"   Reason: {enhanced['reason']}")
                 
-                # Store risk level for position sizing
+                # Store risk level for position sizing - RL determines risk level
                 self._current_risk_level = enhanced.get('risk_level', 'LOW')
                 
                 signal_data = {
@@ -347,7 +485,7 @@ class RLEnhancedBinanceFuturesBot:
             logger.warning("⚠️ Running without RL enhancement - using traditional signals only")
             signal_data = original_signal_data
 
-        # Store the signal in the database
+        # Store the signal in the database for tracking and analysis
         signal_id = self.db.store_signal(
             self.symbol,
             df['close'].iloc[-1],
@@ -358,7 +496,21 @@ class RLEnhancedBinanceFuturesBot:
         return signal_data
     
     def _generate_original_signals(self, df: pd.DataFrame, indicators: Dict) -> Dict:
-        """Original signal generation logic"""
+        """Original signal generation logic using traditional technical analysis
+        
+        Analyzes multiple technical indicators to generate buy/sell signals:
+        - RSI: Overbought (>70) and oversold (<30) conditions
+        - MACD: Bullish/bearish crossovers and histogram analysis
+        - VWAP: Price position relative to volume-weighted average
+        - EMA: Trend analysis using multiple EMA alignments
+        
+        Args:
+            df: DataFrame containing OHLCV market data
+            indicators: Dictionary of calculated technical indicators
+            
+        Returns:
+            Dict: Signal data with direction (-1 to 1), strength (0-5), and reasoning
+        """
         
         signal = 0
         strength = 0
@@ -375,7 +527,7 @@ class RLEnhancedBinanceFuturesBot:
         current_price = df['close'].iloc[-1]
         
         try:
-            # RSI Analysis
+            # RSI Analysis - Relative Strength Index for overbought/oversold conditions
             rsi = indicators['rsi'].iloc[-1]
             if rsi < 30:
                 signal += 1
@@ -388,7 +540,7 @@ class RLEnhancedBinanceFuturesBot:
             else:
                 reasons.append(f"RSI neutral ({rsi:.1f})")
             
-            # MACD Analysis
+            # MACD Analysis - Moving Average Convergence Divergence for trend momentum
             macd = indicators['macd'].iloc[-1]
             macd_signal = indicators['macd_signal'].iloc[-1]
             macd_histogram = indicators['macd_histogram'].iloc[-1]
@@ -402,7 +554,7 @@ class RLEnhancedBinanceFuturesBot:
                 strength += 1
                 reasons.append("MACD bearish crossover")
             
-            # VWAP Analysis
+            # VWAP Analysis - Volume Weighted Average Price for institutional levels
             vwap = indicators['vwap'].iloc[-1]
             if current_price > vwap * 1.001:  # 0.1% above VWAP
                 signal += 1
@@ -411,7 +563,7 @@ class RLEnhancedBinanceFuturesBot:
                 signal -= 1
                 reasons.append(f"Price below VWAP ({((current_price/vwap-1)*100):.2f}%)")
             
-            # EMA Trend Analysis
+            # EMA Trend Analysis - Exponential Moving Average alignment for trend direction
             ema_9 = indicators['ema_9'].iloc[-1]
             ema_21 = indicators['ema_21'].iloc[-1]
             ema_50 = indicators['ema_50'].iloc[-1]
@@ -434,7 +586,7 @@ class RLEnhancedBinanceFuturesBot:
                 'indicators': {}
             }
         
-        # Normalize signal
+        # Normalize signal to ensure it's within valid range (-1 to 1)
         signal = max(-1, min(1, signal))
         
         return {
@@ -453,7 +605,15 @@ class RLEnhancedBinanceFuturesBot:
         return current_indicators
     
     def check_pause_status(self) -> bool:
-        """Check if bot is paused by looking for pause flag file"""
+        """Check if bot is paused by looking for pause flag file
+        
+        Allows external control of bot trading activity without stopping
+        the entire process. When paused, signals are still generated but
+        no actual trades are executed.
+        
+        Returns:
+            bool: True if bot is paused, False if active
+        """
         if os.path.exists(self.pause_file):
             if not self.paused:
                 self.paused = True
@@ -466,9 +626,25 @@ class RLEnhancedBinanceFuturesBot:
             return False
     
     def execute_trade(self, signal_data: Dict, current_price: float) -> bool:
-        """Execute trade with RL-enhanced position sizing"""
+        """Execute trade with RL-enhanced position sizing
         
-        # Check if bot is paused
+        Places market orders based on signal direction with dynamic position sizing.
+        Features:
+        - RL-based position size adjustment based on risk assessment
+        - Account balance verification and position size calculation
+        - Order tracking for bot-created positions
+        - Database storage of trade details
+        - Automatic take profit and stop loss placement
+        
+        Args:
+            signal_data: Dictionary containing signal information and strength
+            current_price: Current market price for order execution
+            
+        Returns:
+            bool: True if trade executed successfully, False otherwise
+        """
+        
+        # Check if bot is paused - Respect pause flag for manual control
         if self.check_pause_status():
             logger.info("⏸️ Bot is paused - skipping trade execution (signal still recorded)")
             return False
@@ -479,7 +655,7 @@ class RLEnhancedBinanceFuturesBot:
             logger.info("🛑 No trade signal - maintaining current position")
             return False
         
-        # RL Risk Management Override
+        # RL Risk Management Override - Adjust position size based on RL risk assessment
         if RL_ENHANCEMENT_ENABLED:
             # Much smaller position sizes based on RL recommendations
             original_percentage = self.position_percentage
@@ -488,7 +664,7 @@ class RLEnhancedBinanceFuturesBot:
                 logger.info(f"🛡️ RL Position Size: {self.position_percentage * 100}% (risk: {self._current_risk_level})")
         
         try:
-            # Get account info
+            # Get account info - Fetch current balance for position size calculation
             account_info = self.client.futures_account()
             available_balance = 0.0
             for asset in account_info['assets']:
@@ -496,7 +672,7 @@ class RLEnhancedBinanceFuturesBot:
                     available_balance = float(asset['walletBalance'])
                     break
             
-            # Calculate position size (much smaller now!)
+            # Calculate position size - Conservative sizing for risk management
             position_value = available_balance * self.position_percentage
             position_size = (position_value * self.leverage) / current_price
             
@@ -516,7 +692,7 @@ class RLEnhancedBinanceFuturesBot:
             logger.info(f"   Value: ${position_value:.2f} ({self.position_percentage}% of ${available_balance:.2f})")
             logger.info(f"   Leverage: {self.leverage}x")
             
-            # Place order
+            # Place order - Execute market order on Binance
             order = self.client.futures_create_order(
                 symbol=self.symbol,
                 side=side,
@@ -524,14 +700,14 @@ class RLEnhancedBinanceFuturesBot:
                 quantity=position_size
             )
             
-            # Track the order ID for this bot
+            # Track the order ID for this bot - Ensure we only manage our own positions
             order_id = order.get('orderId')
             if order_id:
                 self.bot_order_ids.add(order_id)
                 self.position_order_id = order_id
                 logger.info(f"🔢 Tracking order ID: {order_id}")
             
-            # Store in database
+            # Store in database - Record trade details for tracking
             trade_id = self.db.store_trade(
                 signal_id=signal_data['signal_id'],
                 symbol=self.symbol,
@@ -545,12 +721,12 @@ class RLEnhancedBinanceFuturesBot:
             
             logger.info(f"✅ RL-Enhanced trade executed: Order ID {order_id}, DB Trade ID {trade_id}")
             
-            # Update internal state
+            # Update internal state - Keep bot's position tracking current
             self.position_side = 'LONG' if side == 'BUY' else 'SHORT'
             self.position_size = position_size
             self.entry_price = current_price
 
-            # Set TP/SL
+            # Set TP/SL - Automatically place risk management orders
             self.set_tp_sl(side, current_price, position_size)
             
             return True
@@ -585,7 +761,17 @@ class RLEnhancedBinanceFuturesBot:
             return None, None
 
     def set_tp_sl(self, side: str, entry_price: float, quantity: float):
-        """Set Take Profit and Stop Loss orders"""
+        """Set Take Profit and Stop Loss orders
+        
+        Creates conditional orders to automatically close positions:
+        - Take Profit: 15% profit target
+        - Stop Loss: 5% maximum loss limit
+        
+        Args:
+            side: Original trade direction ('BUY' or 'SELL')
+            entry_price: Price at which position was entered
+            quantity: Position size for the orders
+        """
         try:
             if side == 'BUY':
                 tp_price = round(entry_price * 1.15, 4)  # 15% profit (85% -> 115%)
@@ -716,7 +902,16 @@ class RLEnhancedBinanceFuturesBot:
             return {'symbol': self.symbol, 'side': None, 'size': 0}
     
     def reconcile_positions(self):
-        """Reconcile database positions with actual Binance positions"""
+        """Reconcile database positions with actual Binance positions
+        
+        Ensures database records match actual exchange positions by:
+        - Comparing live Binance positions with database open trades
+        - Detecting externally closed positions
+        - Updating database records to reflect actual state
+        - Clearing position tracking for externally managed trades
+        
+        This prevents discrepancies between bot's internal state and reality.
+        """
         try:
             # Get live positions from Binance
             positions = self.client.futures_position_information(symbol=self.symbol)
@@ -914,7 +1109,21 @@ class RLEnhancedBinanceFuturesBot:
             return False
     
     def run(self, interval: int = 300):
-        """Main bot loop with RL enhancement"""
+        """Main bot loop with RL enhancement
+        
+        Core trading loop that:
+        1. Fetches market data and calculates indicators
+        2. Generates RL-enhanced trading signals
+        3. Manages existing positions and risk
+        4. Executes new trades based on signals
+        5. Sends Telegram notifications
+        6. Handles pause/resume functionality
+        
+        The loop runs continuously with configurable intervals.
+        
+        Args:
+            interval: Time between iterations in seconds (default: 300 = 5 minutes)
+        """
         logger.info(f"🚀 Starting RL-Enhanced Binance Futures Bot for {self.symbol}")
         logger.info(f"🛡️ SAFETY MODE: {self.position_percentage}% max position (vs 51% original)")
         logger.info(f"🤖 RL Enhancement: {'ACTIVE' if RL_ENHANCEMENT_ENABLED else 'DISABLED'}")
@@ -1225,7 +1434,11 @@ class RLEnhancedBinanceFuturesBot:
             logger.error(f"❌ Enhanced reconciliation failed: {e}")
 
 def main():
-    """Start the RL-Enhanced Trading Bot"""
+    """Start the RL-Enhanced Trading Bot
+    
+    Entry point for running the bot with default parameters.
+    Creates bot instance with conservative settings and starts the main loop.
+    """
     try:
         logger.info("🤖 Initializing RL-Enhanced Trading Bot...")
         
