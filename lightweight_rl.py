@@ -40,7 +40,7 @@ class SimpleTradingAgent:
         self.total_episodes = 0
         
     def discretize_state(self, indicators: Dict) -> str:
-        """Convert continuous indicators to discrete state"""
+        """Convert continuous indicators to discrete state with timing features"""
         
         # Get key indicators
         rsi = indicators.get('rsi', 50)
@@ -51,7 +51,48 @@ class SimpleTradingAgent:
         ema_9 = indicators.get('ema_9', price)
         ema_21 = indicators.get('ema_21', price)
         
-        # Discretize each indicator
+        # Get timing features
+        timestamp = indicators.get('timestamp')
+        hour_state = 'unknown'
+        day_state = 'unknown'
+        session_state = 'unknown'
+        
+        if timestamp:
+            try:
+                if isinstance(timestamp, str):
+                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                else:
+                    dt = timestamp
+                
+                # Hour of day (market hours consideration)
+                hour = dt.hour
+                if 9 <= hour < 12:  # Morning session
+                    hour_state = 'morning'
+                elif 12 <= hour < 15:  # Midday session  
+                    hour_state = 'midday'
+                elif 15 <= hour < 17:  # Afternoon session
+                    hour_state = 'afternoon'
+                else:  # After hours/pre-market
+                    hour_state = 'off_hours'
+                
+                # Day of week
+                day = dt.weekday()  # 0=Monday, 6=Sunday
+                if day < 5:  # Monday to Friday
+                    day_state = 'weekday'
+                else:  # Weekend
+                    day_state = 'weekend'
+                
+                # Market session (combining hour and day)
+                if day_state == 'weekday' and 9 <= hour < 16:
+                    session_state = 'market_hours'
+                else:
+                    session_state = 'off_market'
+                    
+            except (ValueError, AttributeError) as e:
+                # If timestamp parsing fails, use defaults
+                pass
+        
+        # Discretize technical indicators
         rsi_state = 'oversold' if rsi < 30 else 'overbought' if rsi > 70 else 'neutral'
         
         macd_state = 'bullish' if macd > 0 else 'bearish'
@@ -61,8 +102,8 @@ class SimpleTradingAgent:
         price_vs_ema9 = 'above_ema9' if price > ema_9 else 'below_ema9'
         price_vs_ema21 = 'above_ema21' if price > ema_21 else 'below_ema21'
         
-        # Create state string
-        state = f"{rsi_state}_{macd_state}_{macd_hist_state}_{price_vs_vwap}_{price_vs_ema9}_{price_vs_ema21}"
+        # Create enhanced state string with timing features
+        state = f"{rsi_state}_{macd_state}_{macd_hist_state}_{price_vs_vwap}_{price_vs_ema9}_{price_vs_ema21}_{hour_state}_{session_state}"
         
         return state
     

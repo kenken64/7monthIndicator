@@ -82,6 +82,9 @@ class EnhancedRLRetrainer:
                         logger.warning(f"Failed to parse indicators for row at {row_dict['timestamp']}")
                         continue
                 
+                # Ensure timestamp is available for timing features
+                # The timestamp is already in row_dict from the SQL query
+                
                 # Calculate outcome label for supervised learning aspects
                 outcome = 'unknown'
                 if row_dict['pnl_percentage'] is not None:
