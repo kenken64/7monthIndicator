@@ -3,6 +3,11 @@ let pnlChart, signalChart, projectionChart;
 let currentSymbol = 'SUIUSDC';
 let currentDays = 30;
 
+// PIN protection variables
+let pendingPauseAction = null;
+let pinAttempts = 0;
+let pinBlocked = false;
+
 // Initialize dashboard when page loads
 document.addEventListener('DOMContentLoaded', function() {
     initializeCharts();
@@ -22,6 +27,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Auto-refresh every 30 seconds
     setInterval(refreshDashboard, 30000);
     setInterval(loadPauseStatus, 10000); // Check pause status more frequently
+    
+    // Load chart analysis data
+    loadChartAnalysis();
 });
 
 function initializeCharts() {
@@ -149,6 +157,7 @@ function handleTimeRangeChange(event) {
 function refreshDashboard() {
     loadSystemStats();
     loadDashboardData();
+    loadChartAnalysis();
 }
 
 async function loadSystemStats() {
@@ -693,46 +702,15 @@ function handleLogsClick() {
 }
 
 async function handlePauseClick() {
-    try {
-        const pauseBtn = document.getElementById('pauseBtn');
-        const originalContent = pauseBtn.innerHTML;
-        
-        // Show loading state
-        pauseBtn.innerHTML = '🔄 <span class="hidden sm:inline">Loading...</span>';
-        pauseBtn.disabled = true;
-        
-        const response = await fetch('/api/bot-pause', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ action: 'toggle' })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            // Update button state based on response
-            updatePauseButton(data.status === 'paused');
-            
-            // Show success message
-            showNotification(`Bot ${data.status} successfully`, 'success');
-            
-            // Refresh pause status immediately
-            await loadPauseStatus();
-        } else {
-            throw new Error(data.error || 'Failed to toggle pause state');
-        }
-        
-    } catch (error) {
-        console.error('Error toggling pause:', error);
-        showNotification('Failed to toggle bot pause state', 'error');
-        
-        // Restore original button state
-        const pauseBtn = document.getElementById('pauseBtn');
-        pauseBtn.innerHTML = originalContent;
-        pauseBtn.disabled = false;
+    // Check if PIN attempts are blocked
+    if (pinBlocked) {
+        showNotification('PIN attempts blocked. Please wait before trying again.', 'error');
+        return;
     }
+    
+    // Set pending action and show PIN modal
+    pendingPauseAction = 'toggle';
+    showPinModal();
 }
 
 async function loadPauseStatus() {
@@ -779,6 +757,175 @@ function updatePauseButton(isPaused) {
     pauseBtn.disabled = false;
 }
 
+// PIN Modal Functions
+function showPinModal() {
+    const modal = document.getElementById('pinModal');
+    const pinInput = document.getElementById('controlPin');
+    
+    // Clear previous state
+    pinInput.value = '';
+    hideAllPinMessages();
+    
+    // Show modal and focus input
+    modal.style.display = 'flex';
+    setTimeout(() => pinInput.focus(), 100);
+    
+    // Add enter key support
+    pinInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            submitPin();
+        }
+    });
+    
+    // Add input formatting (only numbers)
+    pinInput.addEventListener('input', function(e) {
+        // Only allow digits
+        e.target.value = e.target.value.replace(/[^0-9]/g, '');
+        
+        // Clear error messages when user starts typing
+        hideAllPinMessages();
+    });
+}
+
+function closePinModal() {
+    document.getElementById('pinModal').style.display = 'none';
+    pendingPauseAction = null;
+    hideAllPinMessages();
+}
+
+async function submitPin() {
+    const pin = document.getElementById('controlPin').value.trim();
+    const submitBtn = document.getElementById('submitPinBtn');
+    
+    // Validate PIN format
+    if (!pin || pin.length !== 6 || !/^\d{6}$/.test(pin)) {
+        showPinError('PIN must be exactly 6 digits');
+        return;
+    }
+    
+    if (!pendingPauseAction) {
+        showPinError('No pending action');
+        return;
+    }
+    
+    // Disable submit button during request
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Verifying...';
+    
+    try {
+        const response = await fetch('/api/bot-pause', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                action: pendingPauseAction,
+                pin: pin
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // PIN validated successfully
+            showPinSuccess('PIN validated! Executing action...');
+            
+            setTimeout(() => {
+                closePinModal();
+                showNotification(data.message, 'success');
+                
+                // Update UI
+                updatePauseButton(data.is_paused);
+                loadPauseStatus();
+                
+                // Reset attempt counter
+                pinAttempts = 0;
+                pinBlocked = false;
+            }, 1000);
+            
+        } else {
+            // PIN validation failed
+            if (response.status === 429 || data.blocked) {
+                // Rate limited/blocked
+                showPinBlocked(data.message);
+                pinBlocked = true;
+                
+                // Auto-close modal after showing blocked message
+                setTimeout(() => {
+                    closePinModal();
+                    showNotification('PIN attempts blocked for 15 minutes', 'error');
+                }, 2000);
+                
+                // Reset block after 15 minutes
+                setTimeout(() => {
+                    pinBlocked = false;
+                    pinAttempts = 0;
+                }, 15 * 60 * 1000);
+                
+            } else {
+                // Invalid PIN
+                pinAttempts++;
+                showPinError(data.message);
+                
+                // Clear PIN input
+                document.getElementById('controlPin').value = '';
+                document.getElementById('controlPin').focus();
+                
+                if (pinAttempts >= 3) {
+                    showPinBlocked('Too many failed attempts. Blocked for 15 minutes.');
+                    pinBlocked = true;
+                    
+                    setTimeout(() => {
+                        closePinModal();
+                        showNotification('PIN attempts blocked for 15 minutes', 'error');
+                    }, 2000);
+                    
+                    // Reset after 15 minutes
+                    setTimeout(() => {
+                        pinBlocked = false;
+                        pinAttempts = 0;
+                    }, 15 * 60 * 1000);
+                }
+            }
+        }
+        
+    } catch (error) {
+        console.error('PIN submission error:', error);
+        showPinError('Network error. Please try again.');
+    } finally {
+        // Re-enable submit button
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit';
+    }
+}
+
+function showPinError(message) {
+    hideAllPinMessages();
+    const errorDiv = document.getElementById('pinError');
+    errorDiv.textContent = message;
+    errorDiv.style.display = 'block';
+}
+
+function showPinBlocked(message) {
+    hideAllPinMessages();
+    const blockedDiv = document.getElementById('pinBlocked');
+    blockedDiv.textContent = message;
+    blockedDiv.style.display = 'block';
+}
+
+function showPinSuccess(message) {
+    hideAllPinMessages();
+    const successDiv = document.getElementById('pinSuccess');
+    successDiv.textContent = message;
+    successDiv.style.display = 'block';
+}
+
+function hideAllPinMessages() {
+    document.getElementById('pinError').style.display = 'none';
+    document.getElementById('pinBlocked').style.display = 'none';
+    document.getElementById('pinSuccess').style.display = 'none';
+}
+
 function showNotification(message, type = 'info') {
     // Create notification element
     const notification = document.createElement('div');
@@ -798,4 +945,139 @@ function showNotification(message, type = 'info') {
             notification.parentNode.removeChild(notification);
         }
     }, 3000);
+}
+
+// Chart Analysis Functions
+function loadChartAnalysis() {
+    fetch('/api/chart-analysis')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayChartAnalysis(data.data);
+                if (data.chart_available) {
+                    loadChartImage();
+                }
+            } else {
+                showChartAnalysisError(data.message || 'No chart analysis data available');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading chart analysis:', error);
+            showChartAnalysisError('Failed to load chart analysis');
+        });
+}
+
+function loadChartImage() {
+    const chartImage = document.getElementById('chartImage');
+    const chartLoading = document.getElementById('chartLoading');
+    
+    // Add timestamp to prevent caching
+    const imageUrl = '/api/chart-image?' + new Date().getTime();
+    
+    chartImage.onload = function() {
+        chartLoading.style.display = 'none';
+        chartImage.style.display = 'block';
+    };
+    
+    chartImage.onerror = function() {
+        showChartAnalysisError('Failed to load chart image');
+    };
+    
+    chartImage.src = imageUrl;
+}
+
+function displayChartAnalysis(data) {
+    try {
+        // Update basic metrics
+        const recommendation = data.ai_analysis?.recommendation || 'N/A';
+        const confidence = data.ai_analysis?.confidence || 'N/A';
+        const currentPrice = data.market_data?.price || 'N/A';
+        const priceChange = data.market_data?.change_24h || 'N/A';
+        
+        document.getElementById('recommendation').textContent = recommendation;
+        document.getElementById('confidence').textContent = confidence;
+        document.getElementById('currentPrice').textContent = currentPrice !== 'N/A' ? `$${currentPrice.toFixed(4)}` : 'N/A';
+        document.getElementById('priceChange').textContent = priceChange !== 'N/A' ? `${priceChange.toFixed(2)}%` : 'N/A';
+        
+        // Update recommendation card color based on recommendation
+        const recommendationCard = document.getElementById('recommendationCard');
+        recommendationCard.className = 'metric ' + getRecommendationClass(recommendation);
+        
+        // Update price change color
+        const priceChangeElement = document.getElementById('priceChange');
+        if (priceChange !== 'N/A') {
+            priceChangeElement.parentElement.className = 'metric ' + (priceChange >= 0 ? 'metric-positive' : 'metric-negative');
+        }
+        
+        // Display observations
+        const observations = data.ai_analysis?.key_observations || [];
+        const observationsList = document.getElementById('observations');
+        observationsList.innerHTML = '';
+        observations.forEach(obs => {
+            const li = document.createElement('li');
+            li.textContent = obs;
+            li.className = 'flex items-start';
+            li.innerHTML = `<span class="mr-2">•</span><span>${obs}</span>`;
+            observationsList.appendChild(li);
+        });
+        
+        // Display risk factors
+        const riskFactors = data.ai_analysis?.risk_factors || [];
+        const riskList = document.getElementById('riskFactors');
+        riskList.innerHTML = '';
+        riskFactors.forEach(risk => {
+            const li = document.createElement('li');
+            li.textContent = risk;
+            li.className = 'flex items-start';
+            li.innerHTML = `<span class="mr-2">•</span><span>${risk}</span>`;
+            riskList.appendChild(li);
+        });
+        
+        // Display AI reasoning
+        const reasoning = data.ai_analysis?.reasoning || 'No analysis available';
+        document.getElementById('reasoning').textContent = reasoning;
+        
+        // Update timestamp
+        const analysisTime = data.analysis_time || 'Unknown';
+        const formattedTime = formatTimestamp(analysisTime);
+        document.getElementById('analysisTimestamp').textContent = `Last updated: ${formattedTime}`;
+        
+        // Show all sections
+        document.getElementById('analysisResults').style.display = 'grid';
+        document.getElementById('observationsSection').style.display = observations.length > 0 ? 'block' : 'none';
+        document.getElementById('riskSection').style.display = riskFactors.length > 0 ? 'block' : 'none';
+        document.getElementById('reasoningSection').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Error displaying chart analysis:', error);
+        showChartAnalysisError('Error displaying analysis data');
+    }
+}
+
+function getRecommendationClass(recommendation) {
+    switch (recommendation?.toUpperCase()) {
+        case 'BUY':
+            return 'metric-positive';
+        case 'SELL':
+            return 'metric-negative';
+        case 'HOLD':
+            return 'metric-neutral';
+        default:
+            return 'metric-neutral';
+    }
+}
+
+function showChartAnalysisError(message) {
+    const chartLoading = document.getElementById('chartLoading');
+    chartLoading.innerHTML = `<div class="text-red-500">${message}</div>`;
+    document.getElementById('chartImage').style.display = 'none';
+}
+
+function formatTimestamp(timestamp) {
+    try {
+        const date = new Date(timestamp);
+        return date.toLocaleString();
+    } catch (error) {
+        return timestamp;
+    }
 }

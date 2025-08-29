@@ -91,6 +91,63 @@
             </div>
         </div>
 
+        <!-- Chart Analysis Section -->
+        <div class="mb-8">
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">📊 SUI/USDC Chart Analysis</h3>
+                <div id="chartAnalysisSection">
+                    <div class="mb-4">
+                        <img id="chartImage" src="" alt="Loading chart..." class="w-full h-auto rounded-lg border shadow-sm" style="display: none;">
+                        <div id="chartLoading" class="flex justify-center items-center h-64 bg-gray-50 rounded-lg">
+                            <div class="text-gray-500">Loading chart analysis...</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Analysis Results -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="analysisResults" style="display: none;">
+                        <div class="metric" id="recommendationCard">
+                            <div class="text-lg font-bold" id="recommendation">-</div>
+                            <div class="text-sm text-gray-600">Recommendation</div>
+                        </div>
+                        <div class="metric metric-neutral">
+                            <div class="text-lg font-bold" id="confidence">-</div>
+                            <div class="text-sm text-gray-600">Confidence</div>
+                        </div>
+                        <div class="metric metric-neutral">
+                            <div class="text-lg font-bold" id="currentPrice">-</div>
+                            <div class="text-sm text-gray-600">Current Price</div>
+                        </div>
+                        <div class="metric metric-neutral">
+                            <div class="text-lg font-bold" id="priceChange">-</div>
+                            <div class="text-sm text-gray-600">24h Change</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Key Observations -->
+                    <div class="mt-4" id="observationsSection" style="display: none;">
+                        <h4 class="font-semibold text-sm mb-2">🔍 Key Observations</h4>
+                        <ul id="observations" class="text-sm text-gray-700 space-y-1"></ul>
+                    </div>
+                    
+                    <!-- Risk Factors -->
+                    <div class="mt-4" id="riskSection" style="display: none;">
+                        <h4 class="font-semibold text-sm mb-2">⚠️ Risk Factors</h4>
+                        <ul id="riskFactors" class="text-sm text-gray-700 space-y-1"></ul>
+                    </div>
+                    
+                    <!-- AI Reasoning -->
+                    <div class="mt-4" id="reasoningSection" style="display: none;">
+                        <h4 class="font-semibold text-sm mb-2">🤖 AI Analysis</h4>
+                        <p id="reasoning" class="text-sm text-gray-700"></p>
+                    </div>
+                    
+                    <div class="mt-4 text-xs text-gray-500" id="analysisTimestamp">
+                        Last updated: -
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- RL Bot Live Status -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
             <div class="card">
@@ -359,6 +416,55 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PIN Modal for Bot Control -->
+    <div id="pinModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
+        <div class="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
+            <div class="text-center mb-6">
+                <h3 class="text-lg font-bold text-gray-900 mb-2">🔐 Bot Control Authentication</h3>
+                <p class="text-gray-600">Enter your 6-digit PIN to control the trading bot</p>
+            </div>
+            
+            <div class="mb-4">
+                <input 
+                    type="password" 
+                    id="controlPin" 
+                    placeholder="••••••" 
+                    maxlength="6" 
+                    class="w-full text-center text-2xl font-mono bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    autocomplete="off"
+                    inputmode="numeric"
+                    pattern="[0-9]{6}"
+                />
+                <p class="text-xs text-gray-500 mt-1 text-center">6 digits required</p>
+            </div>
+            
+            <!-- Error and status messages -->
+            <div id="pinError" class="mb-4 p-3 bg-red-100 text-red-700 rounded-md text-sm" style="display: none;"></div>
+            <div id="pinBlocked" class="mb-4 p-3 bg-orange-100 text-orange-700 rounded-md text-sm" style="display: none;"></div>
+            <div id="pinSuccess" class="mb-4 p-3 bg-green-100 text-green-700 rounded-md text-sm" style="display: none;"></div>
+            
+            <div class="flex space-x-3">
+                <button 
+                    onclick="closePinModal()" 
+                    class="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+                >
+                    Cancel
+                </button>
+                <button 
+                    onclick="submitPin()" 
+                    id="submitPinBtn"
+                    class="flex-1 bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                    Submit
+                </button>
+            </div>
+            
+            <div class="mt-4 text-xs text-gray-500 text-center">
+                <p>⚠️ 3 attempts allowed. 15-minute lockout after failed attempts.</p>
             </div>
         </div>
     </div>

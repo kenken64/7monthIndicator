@@ -22,6 +22,7 @@ from flask import Flask, render_template, jsonify, request
 from database import get_database
 from datetime import datetime, timedelta
 import logging
+import re
 
 app = Flask(__name__)
 app.secret_key = 'trading_bot_secret_key'
@@ -29,6 +30,95 @@ app.secret_key = 'trading_bot_secret_key'
 # Configure logging for web dashboard activities
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Global variable to track PIN failed attempts with rate limiting
+pin_attempts = {}
+
+def validate_6_digit_pin(provided_pin: str, client_ip: str) -> dict:
+    """
+    Validate 6-digit PIN against environment variable with rate limiting
+    
+    Args:
+        provided_pin: User-provided PIN (must be exactly 6 digits)
+        client_ip: Client IP address for rate limiting
+        
+    Returns:
+        dict: Validation result with success status and message
+    """
+    global pin_attempts
+    
+    # Check if PIN is set in environment
+    expected_pin = os.getenv('BOT_CONTROL_PIN')
+    if not expected_pin:
+        logger.error("BOT_CONTROL_PIN not set in environment variables")
+        return {
+            'success': False,
+            'message': 'PIN protection not configured',
+            'blocked': False
+        }
+    
+    # Validate PIN format (must be exactly 6 digits)
+    if not provided_pin or not re.match(r'^\d{6}$', provided_pin):
+        return {
+            'success': False,
+            'message': 'PIN must be exactly 6 digits',
+            'blocked': False
+        }
+    
+    # Rate limiting logic
+    current_time = datetime.now()
+    client_key = f"pin_{client_ip}"
+    
+    # Initialize or reset attempts if more than 15 minutes passed
+    if client_key in pin_attempts:
+        last_attempt_time = pin_attempts[client_key]['last_attempt']
+        if current_time - last_attempt_time > timedelta(minutes=15):
+            pin_attempts[client_key] = {'count': 0, 'last_attempt': current_time}
+    else:
+        pin_attempts[client_key] = {'count': 0, 'last_attempt': current_time}
+    
+    # Check if client is blocked due to too many attempts
+    if pin_attempts[client_key]['count'] >= 3:
+        time_since_last = current_time - pin_attempts[client_key]['last_attempt']
+        if time_since_last < timedelta(minutes=15):
+            remaining_minutes = 15 - int(time_since_last.total_seconds() / 60)
+            logger.warning(f"PIN attempts blocked for IP {client_ip}, {remaining_minutes} minutes remaining")
+            return {
+                'success': False,
+                'message': f'Too many failed attempts. Try again in {remaining_minutes} minutes.',
+                'blocked': True
+            }
+    
+    # Validate PIN
+    if provided_pin == expected_pin:
+        # Reset failed attempts on successful validation
+        pin_attempts[client_key] = {'count': 0, 'last_attempt': current_time}
+        logger.info(f"✅ 6-digit PIN validated successfully for bot control from IP: {client_ip}")
+        return {
+            'success': True,
+            'message': 'PIN validated successfully',
+            'blocked': False
+        }
+    else:
+        # Increment failed attempts
+        pin_attempts[client_key]['count'] += 1
+        pin_attempts[client_key]['last_attempt'] = current_time
+        
+        attempts_remaining = 3 - pin_attempts[client_key]['count']
+        logger.warning(f"❌ Invalid 6-digit PIN attempt from IP {client_ip}. Attempts remaining: {attempts_remaining}")
+        
+        if attempts_remaining > 0:
+            return {
+                'success': False,
+                'message': f'Invalid PIN. {attempts_remaining} attempts remaining.',
+                'blocked': False
+            }
+        else:
+            return {
+                'success': False,
+                'message': 'Too many failed attempts. Blocked for 15 minutes.',
+                'blocked': True
+            }
 
 @app.route('/')
 def dashboard():
@@ -690,7 +780,8 @@ def stream_logs():
         # Keep track of file positions to stream only new log entries
         log_files = {
             'logs/rl_bot_error.log': 0,
-            'trading_bot.log': 0
+            'trading_bot.log': 0,
+            'chart_analysis_bot.log': 0
         }
         
         while True:
@@ -750,8 +841,10 @@ def get_recent_logs():
             log_files = ['logs/rl_bot_error.log', 'logs/rl_bot_main.log']
         elif log_source == 'trading_bot':
             log_files = ['trading_bot.log']
+        elif log_source == 'chart_bot':
+            log_files = ['chart_analysis_bot.log']
         else:
-            log_files = ['logs/rl_bot_error.log', 'trading_bot.log']
+            log_files = ['logs/rl_bot_error.log', 'trading_bot.log', 'chart_analysis_bot.log']
         
         for log_file in log_files:
             if os.path.exists(log_file):
@@ -789,45 +882,86 @@ def get_recent_logs():
 
 @app.route('/api/bot-pause', methods=['POST'])
 def toggle_bot_pause():
-    """API endpoint to pause/resume the RL bot
+    """API endpoint to pause/resume the RL bot with 6-digit PIN protection
     
     Controls bot trading activity by creating/removing a pause flag file.
     When paused, the bot continues generating signals but stops executing trades.
     
     Request Body:
         action: 'pause', 'resume', or 'toggle'
+        pin: 6-digit PIN for authentication
         
     Returns:
         JSON response with current pause status
     """
     try:
-        action = request.json.get('action', 'toggle')
-        pause_file = 'bot_pause.flag'
+        # Get request data
+        data = request.get_json() or {}
+        action = data.get('action', 'toggle').lower()
+        provided_pin = data.get('pin', '').strip()
         
-        if action == 'pause' or (action == 'toggle' and not os.path.exists(pause_file)):
-            # Create pause file
+        # Get client IP for rate limiting
+        client_ip = request.remote_addr or request.headers.get('X-Forwarded-For', 'unknown')
+        
+        # Validate 6-digit PIN first
+        pin_validation = validate_6_digit_pin(provided_pin, client_ip)
+        if not pin_validation['success']:
+            status_code = 429 if pin_validation['blocked'] else 401
+            return jsonify({
+                'success': False,
+                'message': pin_validation['message'],
+                'blocked': pin_validation['blocked']
+            }), status_code
+        
+        # PIN validated successfully, proceed with bot control
+        pause_file = '/tmp/rl_bot_pause'
+        current_time = datetime.now()
+        timestamp_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
+        
+        if action == 'pause':
             with open(pause_file, 'w') as f:
-                f.write(f"Paused at {datetime.now().isoformat()}\n")
-            status = 'paused'
-            logger.info("🛑 Bot paused via dashboard")
-        else:
-            # Remove pause file
+                f.write(f"Paused at {timestamp_str}")
+            message = "🤖 Trading bot paused successfully"
+            is_paused = True
+            
+        elif action == 'resume':
             if os.path.exists(pause_file):
                 os.remove(pause_file)
-            status = 'running'
-            logger.info("▶️ Bot resumed via dashboard")
+            message = "🚀 Trading bot resumed successfully"
+            is_paused = False
+            
+        elif action == 'toggle':
+            if os.path.exists(pause_file):
+                os.remove(pause_file)
+                message = "🚀 Trading bot resumed successfully"
+                is_paused = False
+            else:
+                with open(pause_file, 'w') as f:
+                    f.write(f"Paused at {timestamp_str}")
+                message = "🤖 Trading bot paused successfully"
+                is_paused = True
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Invalid action. Use: pause, resume, or toggle'
+            }), 400
+        
+        # Log the successful control action
+        logger.info(f"🔒 Bot control action '{action}' executed successfully from IP: {client_ip}")
         
         return jsonify({
             'success': True,
-            'status': status,
-            'message': f'Bot {status} successfully'
+            'message': message,
+            'is_paused': is_paused,
+            'timestamp': timestamp_str,
+            'action': action
         })
         
     except Exception as e:
-        logger.error(f"Error toggling bot pause: {e}")
+        logger.error(f"Error in bot pause endpoint: {e}")
         return jsonify({
             'success': False,
-            'error': str(e)
+            'message': 'Internal server error'
         }), 500
 
 @app.route('/api/bot-pause-status')
@@ -925,8 +1059,8 @@ def get_rl_bot_status():
             'next_update': None
         }
         
-        # Read the RL bot logs
-        log_files = ['trading_bot.log', 'logs/rl_bot_main.log', 'logs/rl_bot_error.log']
+        # Read the bot logs
+        log_files = ['trading_bot.log', 'logs/rl_bot_main.log', 'logs/rl_bot_error.log', 'chart_analysis_bot.log']
         latest_entries = []
         
         for log_file in log_files:
@@ -1017,6 +1151,54 @@ def get_rl_bot_status():
             'success': False,
             'error': str(e)
         }), 500
+
+@app.route('/api/chart-analysis')
+def get_chart_analysis():
+    """API endpoint to get chart analysis data and recommendations"""
+    try:
+        # Read the chart analysis JSON file
+        analysis_file = 'analysis_results_SUIUSDC.json'
+        if os.path.exists(analysis_file):
+            with open(analysis_file, 'r') as f:
+                analysis_data = json.load(f)
+            
+            # Check if chart image exists
+            chart_file = 'chart_analysis_SUIUSDC.png'
+            chart_exists = os.path.exists(chart_file)
+            
+            return jsonify({
+                'success': True,
+                'data': analysis_data,
+                'chart_available': chart_exists,
+                'chart_url': '/api/chart-image' if chart_exists else None
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No chart analysis data available',
+                'chart_available': False
+            })
+    except Exception as e:
+        logger.error(f"Error retrieving chart analysis: {e}")
+        return jsonify({
+            'success': False,
+            'message': f'Error: {str(e)}',
+            'chart_available': False
+        }), 500
+
+@app.route('/api/chart-image')
+def get_chart_image():
+    """API endpoint to serve the chart analysis image"""
+    try:
+        from flask import send_file
+        chart_file = 'chart_analysis_SUIUSDC.png'
+        if os.path.exists(chart_file):
+            return send_file(chart_file, mimetype='image/png')
+        else:
+            return jsonify({'error': 'Chart image not found'}), 404
+    except Exception as e:
+        logger.error(f"Error serving chart image: {e}")
+        return jsonify({'error': f'Error serving image: {str(e)}'}), 500
 
 
 if __name__ == '__main__':
