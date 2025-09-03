@@ -82,6 +82,11 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
 - **Bot Control**: PIN-protected pause/resume functionality for secure remote control
 - **Live Log Streaming**: Real-time logs from all bots (RL, Trading, Chart Analysis)
 - **Multi-Bot Monitoring**: Unified view of all system components and their status
+- **📰 Market News**: Cryptocurrency news with AI-powered sentiment analysis
+  - Paginated news display (10 articles per page)
+  - OpenAI GPT-4 sentiment analysis on top 20 headlines
+  - Real-time market sentiment indicators with confidence levels
+  - Bearish/Bullish sentiment badges in news header
 
 ### 📊 Database & Analytics
 - **SQLite Database**: Stores signals, trades, market data, and performance metrics
@@ -137,6 +142,7 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
    BINANCE_SECRET_KEY=your_binance_secret_key_here
    OPENAI_API_KEY=your_openai_api_key_here
    BOT_CONTROL_PIN=your_6_digit_pin_here
+   NEWS_API_KEY=your_newsapi_key_here
    ```
 
 3. **Get Required API Keys:**
@@ -151,8 +157,14 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
    **OpenAI API Key:**
    - Go to [OpenAI API Keys](https://platform.openai.com/api-keys)
    - Create a new API key for GPT-4 access
-   - Required for chart analysis functionality
+   - Required for chart analysis and market sentiment analysis
    - **Keep your API key secure!**
+
+   **NewsAPI Key:**
+   - Go to [NewsAPI](https://newsapi.org/)
+   - Sign up for a free account to get your API key
+   - Required for cryptocurrency market news and sentiment analysis
+   - Free tier includes 1000 requests per day
 
 ## Bot Configuration
 
@@ -443,6 +455,9 @@ Supported intervals: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d
 - **Chart image not loading**: Verify chart analysis bot is running: `./start_chart_bot.sh status`
 - **PIN protection not working**: Ensure `BOT_CONTROL_PIN` is set in `.env` file
 - **Mobile display issues**: Dashboard is responsive, try refreshing or clearing cache
+- **Market news not showing**: Verify `NEWS_API_KEY` is set in `.env` file
+- **Sentiment analysis not working**: Check OpenAI API key and ensure sufficient credits
+- **News pagination errors**: Restart web dashboard: `./start_web_dashboard.sh restart`
 
 #### Database Issues  
 - **"Database locked"**: Stop bot before running retraining: `./start_rl_bot.sh stop`
@@ -525,6 +540,8 @@ This trading bot system now includes three integrated components:
 - **📝 Live Logging**: Real-time log streaming from all bots
 - **⏰ Automated Analysis**: Chart analysis every 15 minutes
 - **🧠 AI Integration**: OpenAI GPT-4o powered recommendations
+- **📰 Smart News**: Paginated cryptocurrency news with AI sentiment analysis
+- **📈 Market Sentiment**: Real-time bullish/bearish indicators with confidence ratings
 
 ## Disclaimer
 
