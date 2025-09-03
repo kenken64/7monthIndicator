@@ -23,6 +23,113 @@ from database import get_database
 from datetime import datetime, timedelta
 import logging
 import re
+import requests
+import json
+from newsapi import NewsApiClient
+from config import NEWS_CONFIG
+from dotenv import load_dotenv
+import os
+
+# Load environment variables with explicit path
+load_dotenv('.env')
+# Fallback: ensure NEWS_API_KEY is available
+if not os.getenv('NEWS_API_KEY'):
+    # Try to load from .env file in current directory explicitly
+    import dotenv
+    dotenv.load_dotenv('.env', override=True)
+
+def analyze_market_sentiment(news_titles):
+    """
+    Analyze market sentiment using OpenAI based on news titles
+    """
+    try:
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+        if not openai_api_key:
+            logger.warning("OpenAI API key not found, skipping sentiment analysis")
+            return {
+                'sentiment': 'Unknown',
+                'confidence': 0,
+                'explanation': 'OpenAI API key not configured'
+            }
+        
+        # Prepare the prompt
+        titles_text = '\n'.join([f"- {title}" for title in news_titles[:20]])
+        
+        prompt = f"""Analyze the overall market sentiment for cryptocurrency based on these recent news headlines:
+
+{titles_text}
+
+Please provide your analysis in JSON format with:
+1. sentiment: "Bullish", "Bearish", or "Neutral"
+2. confidence: score from 1-10 (10 being very confident)
+3. explanation: brief 1-2 sentence explanation of the sentiment
+
+Respond only with valid JSON."""
+
+        headers = {
+            "Authorization": f"Bearer {openai_api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": "gpt-4",
+            "messages": [
+                {
+                    "role": "user", 
+                    "content": prompt
+                }
+            ],
+            "max_tokens": 300,
+            "temperature": 0.3
+        }
+        
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            ai_response = result['choices'][0]['message']['content']
+            
+            # Try to extract JSON from response
+            try:
+                # Find JSON in the response
+                import re
+                json_match = re.search(r'\{.*\}', ai_response, re.DOTALL)
+                if json_match:
+                    sentiment_data = json.loads(json_match.group())
+                    return sentiment_data
+                else:
+                    # Fallback parsing
+                    return {
+                        'sentiment': 'Neutral',
+                        'confidence': 5,
+                        'explanation': 'Could not parse AI response'
+                    }
+            except json.JSONDecodeError:
+                return {
+                    'sentiment': 'Neutral',
+                    'confidence': 5,
+                    'explanation': 'Failed to parse sentiment analysis'
+                }
+        else:
+            logger.error(f"OpenAI API error: {response.status_code}")
+            return {
+                'sentiment': 'Unknown',
+                'confidence': 0,
+                'explanation': 'API request failed'
+            }
+            
+    except Exception as e:
+        logger.error(f"Error in sentiment analysis: {e}")
+        return {
+            'sentiment': 'Unknown',
+            'confidence': 0,
+            'explanation': f'Error: {str(e)}'
+        }
 
 app = Flask(__name__)
 app.secret_key = 'trading_bot_secret_key'
@@ -1199,6 +1306,84 @@ def get_chart_image():
     except Exception as e:
         logger.error(f"Error serving chart image: {e}")
         return jsonify({'error': f'Error serving image: {str(e)}'}), 500
+
+@app.route('/api/news')
+def get_news():
+    """API endpoint to get news articles with pagination support and sentiment analysis"""
+    try:
+        from datetime import datetime, timedelta
+
+        # Get pagination parameters
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 10, type=int)
+        
+        # Validate pagination parameters
+        page = max(1, page)  # Ensure page is at least 1
+        per_page = min(max(1, per_page), 100)  # Limit per_page between 1 and 100
+
+        newsapi = NewsApiClient(api_key=NEWS_CONFIG['api_key'])
+        from_date = (datetime.now() - timedelta(days=9)).strftime('%Y-%m-%d')
+        q = 'Cryptocurrencies'
+        sort_by = 'popularity'
+        logger.info(f"Fetching news with query: {q}, from: {from_date}, sort_by: {sort_by}, page: {page}, per_page: {per_page}")
+        
+        # Fetch all articles first
+        articles_response = newsapi.get_everything(q=q, from_param=from_date, sort_by=sort_by)
+        all_articles = articles_response['articles']
+        
+        # Calculate pagination
+        total_articles = len(all_articles)
+        total_pages = (total_articles + per_page - 1) // per_page  # Ceiling division
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        
+        # Get articles for current page
+        paginated_articles = all_articles[start_idx:end_idx]
+        
+        # Perform sentiment analysis on first 20 articles (only once per request cycle)
+        sentiment_data = None
+        if page == 1:  # Only analyze sentiment on the first page to avoid repeated API calls
+            logger.info("Performing sentiment analysis on top 20 news articles...")
+            top_20_titles = [article['title'] for article in all_articles[:20] if article.get('title')]
+            if top_20_titles:
+                sentiment_data = analyze_market_sentiment(top_20_titles)
+                logger.info(f"Market sentiment analysis: {sentiment_data['sentiment']} (confidence: {sentiment_data['confidence']}/10)")
+            else:
+                sentiment_data = {
+                    'sentiment': 'Unknown',
+                    'confidence': 0,
+                    'explanation': 'No article titles available for analysis'
+                }
+        
+        logger.info(f"NewsAPI response: Total articles: {total_articles}, Page {page}/{total_pages}, Showing {len(paginated_articles)} articles")
+        
+        response_data = {
+            'success': True,
+            'data': paginated_articles,
+            'pagination': {
+                'current_page': page,
+                'per_page': per_page,
+                'total_articles': total_articles,
+                'total_pages': total_pages,
+                'has_previous': page > 1,
+                'has_next': page < total_pages,
+                'previous_page': page - 1 if page > 1 else None,
+                'next_page': page + 1 if page < total_pages else None
+            }
+        }
+        
+        # Add sentiment data only for first page
+        if sentiment_data:
+            response_data['sentiment'] = sentiment_data
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Error fetching news: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 if __name__ == '__main__':

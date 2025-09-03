@@ -3,6 +3,7 @@
 Configuration file for Binance Futures Trading Bot
 Modify these settings to customize your trading strategy
 """
+import os
 
 # Trading Configuration
 TRADING_CONFIG = {
@@ -98,6 +99,16 @@ NOTIFICATION_CONFIG = {
     'telegram_bot_token': None,    # Telegram bot token  
     'telegram_chat_id': None,      # Telegram chat ID
 }
+
+# NewsAPI Configuration
+# Load environment variables first
+from dotenv import load_dotenv
+load_dotenv('.env')
+
+NEWS_CONFIG = {
+    'api_key': os.getenv('NEWS_API_KEY') or 'ecc8081a11e24c1490722c9da1564fe5',
+}
+
 
 # Advanced Settings
 ADVANCED_CONFIG = {

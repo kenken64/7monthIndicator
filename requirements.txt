@@ -6,3 +6,4 @@ python-dotenv==1.0.0
 matplotlib>=3.8.0
 seaborn>=0.13.0
 flask>=3.0.0
+newsapi-python

@@ -2,6 +2,8 @@
 let pnlChart, signalChart, projectionChart;
 let currentSymbol = 'SUIUSDC';
 let currentDays = 30;
+let currentNewsPage = 1;
+let newsPerPage = 10;
 
 // PIN protection variables
 let pendingPauseAction = null;
@@ -206,8 +208,183 @@ async function loadDashboardData() {
         loadSignalsData(),
         loadTradesData(),
         loadChartData(),
-        loadRecentRLDecisions()
+        loadRecentRLDecisions(),
+        fetchNews()
     ]);
+}
+
+async function fetchNews(page = 1) {
+    try {
+        const response = await fetch(`/api/news?page=${page}&per_page=${newsPerPage}`);
+        const data = await response.json();
+        const newsContainer = document.getElementById('newsContainer');
+        const paginationInfo = document.getElementById('newsPaginationInfo');
+        const paginationDiv = document.getElementById('newsPagination');
+        const sentimentDiv = document.getElementById('marketSentiment');
+        
+        if (data.success && data.data.length > 0) {
+            // Update news articles
+            newsContainer.innerHTML = data.data.map(article => `
+                <div class="bg-gray-50 p-4 rounded-lg">
+                    <h4 class="font-semibold text-sm mb-2">
+                        <a href="${article.url}" target="_blank" class="hover:underline">
+                            ${article.title}
+                        </a>
+                    </h4>
+                    <p class="text-xs text-gray-600 mb-2">${article.source.name} - ${formatDateTime(article.publishedAt)}</p>
+                    <p class="text-sm text-gray-800">${article.description || 'No description available'}</p>
+                </div>
+            `).join('');
+            
+            // Update pagination info
+            const { current_page, total_articles, total_pages } = data.pagination;
+            paginationInfo.textContent = `Page ${current_page} of ${total_pages} (${total_articles} articles)`;
+            
+            // Update market sentiment (only available on first page)
+            if (data.sentiment && page === 1) {
+                updateMarketSentiment(data.sentiment);
+            } else if (page === 1) {
+                // Hide sentiment if not available
+                sentimentDiv.classList.add('hidden');
+            }
+            
+            // Update pagination controls
+            updateNewsPagination(data.pagination);
+            paginationDiv.style.display = total_pages > 1 ? 'flex' : 'none';
+            
+        } else {
+            newsContainer.innerHTML = '<p class="text-gray-500">No news available.</p>';
+            paginationInfo.textContent = 'No news articles';
+            paginationDiv.style.display = 'none';
+            sentimentDiv.classList.add('hidden');
+        }
+    } catch (error) {
+        console.error('Error fetching news:', error);
+        document.getElementById('newsContainer').innerHTML = '<p class="text-red-500">Error loading news.</p>';
+        document.getElementById('newsPaginationInfo').textContent = 'Error loading news';
+        document.getElementById('marketSentiment').classList.add('hidden');
+    }
+}
+
+function updateMarketSentiment(sentiment) {
+    const sentimentDiv = document.getElementById('marketSentiment');
+    
+    if (!sentiment || sentiment.sentiment === 'Unknown') {
+        sentimentDiv.classList.add('hidden');
+        return;
+    }
+    
+    // Get sentiment styling
+    let sentimentClass = '';
+    let sentimentIcon = '';
+    
+    switch (sentiment.sentiment.toLowerCase()) {
+        case 'bullish':
+            sentimentClass = 'bg-green-100 text-green-800 border border-green-200';
+            sentimentIcon = '📈';
+            break;
+        case 'bearish':
+            sentimentClass = 'bg-red-100 text-red-800 border border-red-200';
+            sentimentIcon = '📉';
+            break;
+        case 'neutral':
+            sentimentClass = 'bg-gray-100 text-gray-800 border border-gray-200';
+            sentimentIcon = '📊';
+            break;
+        default:
+            sentimentClass = 'bg-blue-100 text-blue-800 border border-blue-200';
+            sentimentIcon = '❓';
+    }
+    
+    // Create confidence indicator
+    const confidenceStars = '★'.repeat(Math.round(sentiment.confidence / 2));
+    const emptyStars = '☆'.repeat(5 - Math.round(sentiment.confidence / 2));
+    
+    sentimentDiv.className = `px-2 py-1 rounded text-xs font-medium ${sentimentClass}`;
+    sentimentDiv.innerHTML = `
+        <span class="flex items-center space-x-1">
+            <span>${sentimentIcon}</span>
+            <span>${sentiment.sentiment}</span>
+            <span class="text-yellow-500" title="Confidence: ${sentiment.confidence}/10">${confidenceStars}${emptyStars}</span>
+        </span>
+    `;
+    sentimentDiv.classList.remove('hidden');
+    
+    // Add tooltip for explanation
+    if (sentiment.explanation) {
+        sentimentDiv.title = sentiment.explanation;
+    }
+}
+
+function updateNewsPagination(pagination) {
+    const prevBtn = document.getElementById('newsPrevBtn');
+    const nextBtn = document.getElementById('newsNextBtn');
+    const pageNumbers = document.getElementById('newsPageNumbers');
+    
+    // Update Previous/Next buttons
+    prevBtn.disabled = !pagination.has_previous;
+    nextBtn.disabled = !pagination.has_next;
+    
+    // Update page numbers
+    const maxVisiblePages = 5;
+    const currentPage = pagination.current_page;
+    const totalPages = pagination.total_pages;
+    
+    let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+    let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+    
+    // Adjust start page if we're near the end
+    if (endPage - startPage < maxVisiblePages - 1) {
+        startPage = Math.max(1, endPage - maxVisiblePages + 1);
+    }
+    
+    let pageNumbersHtml = '';
+    
+    // Add "..." if we're not starting from page 1
+    if (startPage > 1) {
+        pageNumbersHtml += `<button class="px-2 py-1 text-xs rounded hover:bg-gray-200" onclick="goToNewsPage(1)">1</button>`;
+        if (startPage > 2) {
+            pageNumbersHtml += `<span class="px-2 py-1 text-xs text-gray-500">...</span>`;
+        }
+    }
+    
+    // Add page numbers
+    for (let i = startPage; i <= endPage; i++) {
+        const isActive = i === currentPage;
+        const btnClass = isActive 
+            ? 'px-2 py-1 text-xs rounded bg-blue-500 text-white' 
+            : 'px-2 py-1 text-xs rounded hover:bg-gray-200 text-gray-700';
+        pageNumbersHtml += `<button class="${btnClass}" onclick="goToNewsPage(${i})">${i}</button>`;
+    }
+    
+    // Add "..." if we're not ending at the last page
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) {
+            pageNumbersHtml += `<span class="px-2 py-1 text-xs text-gray-500">...</span>`;
+        }
+        pageNumbersHtml += `<button class="px-2 py-1 text-xs rounded hover:bg-gray-200" onclick="goToNewsPage(${totalPages})">${totalPages}</button>`;
+    }
+    
+    pageNumbers.innerHTML = pageNumbersHtml;
+    
+    // Store current page
+    currentNewsPage = currentPage;
+}
+
+function goToNewsPage(page) {
+    if (page !== currentNewsPage) {
+        fetchNews(page);
+    }
+}
+
+function goToPreviousNewsPage() {
+    if (currentNewsPage > 1) {
+        fetchNews(currentNewsPage - 1);
+    }
+}
+
+function goToNextNewsPage() {
+    fetchNews(currentNewsPage + 1);
 }
 
 async function loadPerformanceData() {
