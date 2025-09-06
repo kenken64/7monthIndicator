@@ -222,6 +222,29 @@ The bot uses an advanced weighted scoring system:
    ./restart_both.sh
    ```
 
+### 🔄 Multi-Claude Code Development Setup
+For parallel development on different services using multiple Claude Code instances:
+
+1. **Setup modular services (one-time setup):**
+   ```bash
+   ./scripts/setup_worktrees.sh   # Initialize git worktrees
+   ./scripts/restart_all.sh       # Start all 4 services
+   ```
+
+2. **Launch 4 Claude Code instances:**
+   ```bash
+   # Terminal 1: claude code /root/7monthIndicator/services/trading
+   # Terminal 2: claude code /root/7monthIndicator/services/web-dashboard  
+   # Terminal 3: claude code /root/7monthIndicator/services/chart-analysis
+   # Terminal 4: claude code /root/7monthIndicator/services/mcp-server
+   ```
+
+3. **Service assignments:**
+   - **Instance 1** (Trading): RL algorithms, trading logic, position management
+   - **Instance 2** (Web Dashboard): UI/UX, Flask routes, mobile responsiveness
+   - **Instance 3** (Chart Analysis): AI analysis, chart generation, visualization
+   - **Instance 4** (MCP Server): Database APIs, query optimization, data management
+
 2. **Individual bot commands:**
    ```bash
    # RL Bot
@@ -542,6 +565,29 @@ This trading bot system now includes three integrated components:
 - **🧠 AI Integration**: OpenAI GPT-4o powered recommendations
 - **📰 Smart News**: Paginated cryptocurrency news with AI sentiment analysis
 - **📈 Market Sentiment**: Real-time bullish/bearish indicators with confidence ratings
+
+## 🚀 **Quick Reference: Multi-Claude Code Launch**
+
+Ready to develop with multiple Claude Code instances? Here's your quick launch guide:
+
+```bash
+# Launch 4 Claude Code instances for parallel development:
+# Terminal 1: claude code /root/7monthIndicator/services/trading
+# Terminal 2: claude code /root/7monthIndicator/services/web-dashboard  
+# Terminal 3: claude code /root/7monthIndicator/services/chart-analysis
+# Terminal 4: claude code /root/7monthIndicator/services/mcp-server
+
+# Master control:
+./scripts/restart_all.sh                 # Control all services
+./scripts/setup_worktrees.sh             # Initialize git worktrees (one-time)
+./scripts/validate_migration.sh          # Validate system integrity
+
+# Access points:
+# Web Dashboard: http://localhost:5000
+# MCP Server API: http://localhost:3000
+```
+
+**Each Claude Code instance works on its own service branch with isolated development, independent testing, and seamless integration capabilities!** 🎯
 
 ## Disclaimer
 
