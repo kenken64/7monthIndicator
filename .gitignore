@@ -88,3 +88,5 @@ market_data/
 tmp/
 temp/
 *.tmp
+
+*.pid

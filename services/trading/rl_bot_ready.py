@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as np
 from binance.client import Client
 from binance.exceptions import BinanceAPIException
-from dotenv import load_dotenv
 import logging
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
@@ -19,7 +18,21 @@ import argparse
 import sys
 import requests
 import json
+from pathlib import Path
+
+# Add project root to Python path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+# Import core modules
+from core.utils.env_loader import load_service_env, get_project_root
+from core.utils.common import setup_logging
+from core.config import TRADING_CONFIG, INDICATOR_CONFIG, SIGNAL_WEIGHTS
+from core.database import DatabaseManager
+
 warnings.filterwarnings('ignore')
+
+# Load service environment
+load_service_env('trading')
 
 # Import RL enhancement
 try:

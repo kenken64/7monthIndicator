@@ -19,10 +19,22 @@ import json
 import os
 import time
 from flask import Flask, render_template, jsonify, request
-from database import get_database
 from datetime import datetime, timedelta
 import logging
 import re
+import sys
+from pathlib import Path
+
+# Add project root to Python path
+sys.path.append(str(Path(__file__).parent.parent.parent))
+
+# Import core modules
+from core.utils.env_loader import load_service_env, get_project_root
+from core.utils.common import setup_logging
+from core.database import get_database
+
+# Load service environment
+load_service_env('web-dashboard')
 import requests
 import json
 from newsapi import NewsApiClient
