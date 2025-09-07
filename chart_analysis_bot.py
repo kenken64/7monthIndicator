@@ -89,7 +89,12 @@ class ChartAnalysisBot:
         # Chart configuration
         self.interval = '15m'  # 15-minute intervals
         self.hours_back = 24   # 24 hours of data
-        self.chart_filename = f'chart_analysis_{self.symbol}.png'
+        
+        # Use shared charts directory
+        shared_charts_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'shared', 'charts')
+        os.makedirs(shared_charts_dir, exist_ok=True)
+        self.chart_filename = os.path.join(shared_charts_dir, f'chart_analysis_{self.symbol}.png')
+        self.analysis_filename = os.path.join(shared_charts_dir, f'analysis_results_{self.symbol}.json')
         
         logger.info(f"🤖 Chart Analysis Bot initialized for {self.symbol}")
         logger.info(f"📊 Configuration: {self.interval} intervals, {self.hours_back}h history")
@@ -516,12 +521,17 @@ def run_single_analysis(bot):
         # Run analysis
         results = bot.run_analysis()
         
-        # Save results to file
-        results_file = f"analysis_results_{bot.symbol}.json"
+        # Save results to file using the shared directory path
+        results_file = bot.analysis_filename
         with open(results_file, 'w') as f:
             json.dump(results, f, indent=2, default=str)
         
         logger.info(f"📁 Results saved to: {results_file}")
+        
+        # Also create a copy in the current directory for backward compatibility
+        local_results_file = f"analysis_results_{bot.symbol}.json"
+        with open(local_results_file, 'w') as f:
+            json.dump(results, f, indent=2, default=str)
         logger.info("🎉 Chart analysis completed successfully!")
         
         return results
