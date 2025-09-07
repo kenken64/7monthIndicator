@@ -34,7 +34,7 @@ start_dashboard() {
     export FLASK_ENV=production
 
     # Check if database exists
-    if [ ! -f "trading_bot.db" ]; then
+    if [ ! -f "data/trading_bot.db" ]; then
         echo "⚠️  Database not found. Please run the trading bot first to create the database."
         echo "   Or create sample data with: python3 -c \"from database import get_database; get_database()\""
     fi

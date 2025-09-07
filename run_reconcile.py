@@ -53,7 +53,7 @@ def fetch_and_store_order_history(bot, symbol, days_back=7):
         print(f"📋 Found {len(orders)} orders from Binance API")
         
         # Connect to database - use the same database as the bot
-        db_path = '/root/7monthIndicator/trading_bot.db'
+        db_path = '/root/7monthIndicator/data/trading_bot.db'
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         
@@ -140,7 +140,7 @@ def detect_individual_manual_closures(bot, symbol):
         print("🔍 Analyzing individual manual position closures...")
         
         # Connect to database
-        db_path = '/root/7monthIndicator/trading_bot.db'
+        db_path = '/root/7monthIndicator/data/trading_bot.db'
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         
@@ -362,7 +362,7 @@ def run_reconcile():
 def show_recent_trades_summary():
     """Show summary of recent trades from database"""
     try:
-        db_path = '/root/7monthIndicator/trading_bot.db'
+        db_path = '/root/7monthIndicator/data/trading_bot.db'
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         

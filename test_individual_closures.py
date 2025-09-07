@@ -2,7 +2,7 @@
 import sqlite3
 from datetime import datetime
 
-db_path = '/root/7monthIndicator/trading_bot.db'
+db_path = '/root/7monthIndicator/data/trading_bot.db'
 conn = sqlite3.connect(db_path)
 conn.row_factory = sqlite3.Row
 

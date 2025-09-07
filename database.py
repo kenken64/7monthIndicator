@@ -36,11 +36,11 @@ class TradingDatabase:
     Uses SQLite with row factory for dictionary-like access to records.
     """
     
-    def __init__(self, db_path: str = "trading_bot.db"):
+    def __init__(self, db_path: str = "data/trading_bot.db"):
         """Initialize database connection and create tables
         
         Args:
-            db_path: Path to SQLite database file (default: 'trading_bot.db')
+            db_path: Path to SQLite database file (default: 'data/trading_bot.db')
         """
         self.db_path = db_path
         self.init_database()
@@ -749,7 +749,7 @@ class TradingDatabase:
 # Singleton instance - ensures only one database connection across the application
 _db_instance = None
 
-def get_database(db_path: str = "trading_bot.db") -> TradingDatabase:
+def get_database(db_path: str = "data/trading_bot.db") -> TradingDatabase:
     """Get singleton database instance
     
     Returns the global database instance, creating it if necessary.
