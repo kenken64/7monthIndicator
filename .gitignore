@@ -88,3 +88,9 @@ market_data/
 tmp/
 temp/
 *.tmp
+
+# Process ID files
+*.pid
+
+# Analysis virtual environment
+analyze_venv/
