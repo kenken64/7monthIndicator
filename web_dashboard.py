@@ -40,9 +40,19 @@ if not os.getenv('NEWS_API_KEY'):
 
 def analyze_market_sentiment(news_titles):
     """
-    Analyze market sentiment using OpenAI based on news titles
+    Analyze market sentiment using OpenAI or local analysis based on configuration
     """
     try:
+        # Check if we should use local analysis (cost-saving mode)
+        use_local_sentiment = os.getenv('USE_LOCAL_SENTIMENT', 'false').lower() == 'true'
+        
+        if use_local_sentiment:
+            from local_sentiment import LocalSentimentAnalyzer
+            analyzer = LocalSentimentAnalyzer()
+            result = analyzer.analyze_sentiment(news_titles)
+            logger.info("Using local sentiment analysis (cost-saving mode)")
+            return result
+        
         openai_api_key = os.getenv('OPENAI_API_KEY')
         if not openai_api_key:
             logger.warning("OpenAI API key not found, skipping sentiment analysis")
@@ -72,15 +82,15 @@ Respond only with valid JSON."""
         }
         
         payload = {
-            "model": "gpt-4",
+            "model": "gpt-4o-mini",  # 60x cheaper than GPT-4
             "messages": [
                 {
                     "role": "user", 
                     "content": prompt
                 }
             ],
-            "max_tokens": 300,
-            "temperature": 0.3
+            "max_tokens": 150,  # Reduced from 300
+            "temperature": 0.1   # Lower temperature for consistent results
         }
         
         response = requests.post(
@@ -1340,15 +1350,37 @@ def get_news():
         # Get articles for current page
         paginated_articles = all_articles[start_idx:end_idx]
         
-        # Perform sentiment analysis on first 20 articles (only once per request cycle)
+        # Perform sentiment analysis with aggressive caching (only once per hour)
         sentiment_data = None
-        if page == 1:  # Only analyze sentiment on the first page to avoid repeated API calls
+        sentiment_cache_key = f"sentiment_{datetime.now().strftime('%Y%m%d_%H')}"
+        
+        if page == 1:  # Only analyze sentiment on the first page
+            # Check if we have cached sentiment for this hour
+            import os
+            sentiment_cache_file = f"/tmp/{sentiment_cache_key}.json"
+            
+            if os.path.exists(sentiment_cache_file):
+                try:
+                    with open(sentiment_cache_file, 'r') as f:
+                        sentiment_data = json.load(f)
+                    logger.info("Using cached sentiment analysis")
+                except:
+                    pass
             logger.info("Performing sentiment analysis on top 20 news articles...")
             top_20_titles = [article['title'] for article in all_articles[:20] if article.get('title')]
-            if top_20_titles:
+            if not sentiment_data and top_20_titles:
                 sentiment_data = analyze_market_sentiment(top_20_titles)
                 logger.info(f"Market sentiment analysis: {sentiment_data['sentiment']} (confidence: {sentiment_data['confidence']}/10)")
-            else:
+                
+                # Cache the result for 1 hour
+                try:
+                    with open(sentiment_cache_file, 'w') as f:
+                        json.dump(sentiment_data, f)
+                    logger.info("Cached sentiment analysis for 1 hour")
+                except:
+                    pass
+                    
+            elif not sentiment_data:
                 sentiment_data = {
                     'sentiment': 'Unknown',
                     'confidence': 0,
@@ -1380,6 +1412,57 @@ def get_news():
         
     except Exception as e:
         logger.error(f"Error fetching news: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/market-context')
+def get_market_context():
+    """API endpoint to get current market context and cross-asset correlation data"""
+    try:
+        from cross_asset_correlation import CrossAssetAnalyzer
+        
+        analyzer = CrossAssetAnalyzer()
+        market_context = analyzer.get_market_context()
+        
+        if market_context:
+            # Also get cross-asset signal for SUI example
+            test_indicators = {'rsi': 50, 'price': 3.68}
+            cross_signal = analyzer.generate_cross_asset_signal(3.68, test_indicators)
+            
+            context_data = {
+                'btc_price': market_context.btc_price,
+                'btc_change_24h': market_context.btc_change_24h,
+                'btc_dominance': market_context.btc_dominance,
+                'eth_price': market_context.eth_price,
+                'eth_change_24h': market_context.eth_change_24h,
+                'fear_greed_index': market_context.fear_greed_index,
+                'market_trend': market_context.market_trend,
+                'volatility_regime': market_context.volatility_regime,
+                'correlation_signal': market_context.correlation_signal,
+                'timestamp': market_context.timestamp.isoformat(),
+                'cross_asset_signal': {
+                    'btc_trend': cross_signal.btc_trend,
+                    'eth_btc_ratio': cross_signal.eth_btc_ratio,
+                    'market_breadth': cross_signal.market_breadth,
+                    'volatility_state': cross_signal.volatility_state,
+                    'regime_signal': cross_signal.regime_signal
+                }
+            }
+            
+            return jsonify({
+                'success': True,
+                'data': context_data
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Market context not available'
+            })
+            
+    except Exception as e:
+        logger.error(f"Error getting market context: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

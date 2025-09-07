@@ -94,8 +94,46 @@ class TradingDatabase:
             if 'rl_enhanced' not in columns:
                 logger.info("Migrating database schema: adding 'rl_enhanced' column to signals table.")
                 conn.execute('ALTER TABLE signals ADD COLUMN rl_enhanced BOOLEAN DEFAULT FALSE')
+            
+            # Check if market_context table exists
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='market_context'")
+            if not cursor.fetchone():
+                logger.info("Creating market_context table for cross-asset data.")
+                self.create_market_context_table(conn)
         except Exception as e:
             logger.error(f"Error migrating database schema: {e}")
+    
+    def create_market_context_table(self, conn):
+        """Create market_context table for storing cross-asset correlation data
+        
+        Args:
+            conn: SQLite database connection
+        """
+        conn.execute('''
+            CREATE TABLE market_context (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                btc_price REAL,
+                btc_change_24h REAL,
+                btc_dominance REAL,
+                eth_price REAL,
+                eth_change_24h REAL,
+                fear_greed_index INTEGER,
+                volatility_regime TEXT,
+                market_trend TEXT,
+                correlation_signal TEXT,
+                btc_trend TEXT,
+                eth_btc_ratio TEXT,
+                market_breadth TEXT,
+                volatility_state TEXT,
+                regime_signal TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Create index on timestamp for efficient querying
+        conn.execute('CREATE INDEX idx_market_context_timestamp ON market_context(timestamp)')
+        logger.info("Market context table created successfully")
     
     def create_tables(self, conn):
         """Create all necessary database tables
@@ -745,6 +783,125 @@ class TradingDatabase:
         except Exception as e:
             logger.error(f"Error recording manual closure: {e}")
             return False
+    
+    def store_market_context(self, market_context: Dict) -> bool:
+        """Store market context and cross-asset correlation data
+        
+        Args:
+            market_context: Dictionary containing market context data
+            
+        Returns:
+            bool: True if stored successfully, False otherwise
+        """
+        try:
+            with self.get_connection() as conn:
+                conn.execute('''
+                    INSERT INTO market_context (
+                        timestamp, btc_price, btc_change_24h, btc_dominance,
+                        eth_price, eth_change_24h, fear_greed_index,
+                        volatility_regime, market_trend, correlation_signal,
+                        btc_trend, eth_btc_ratio, market_breadth,
+                        volatility_state, regime_signal
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    market_context.get('timestamp', datetime.now().isoformat()),
+                    market_context.get('btc_price'),
+                    market_context.get('btc_change_24h'),
+                    market_context.get('btc_dominance'),
+                    market_context.get('eth_price'),
+                    market_context.get('eth_change_24h'),
+                    market_context.get('fear_greed_index'),
+                    market_context.get('volatility_regime'),
+                    market_context.get('market_trend'),
+                    market_context.get('correlation_signal'),
+                    market_context.get('btc_trend'),
+                    market_context.get('eth_btc_ratio'),
+                    market_context.get('market_breadth'),
+                    market_context.get('volatility_state'),
+                    market_context.get('regime_signal')
+                ))
+                
+                logger.debug(f"Stored market context at {market_context.get('timestamp')}")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error storing market context: {e}")
+            return False
+    
+    def get_recent_market_context(self, limit: int = 24) -> List[Dict]:
+        """Get recent market context data
+        
+        Args:
+            limit: Maximum number of records to return
+            
+        Returns:
+            List[Dict]: List of market context records
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute('''
+                    SELECT * FROM market_context
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                ''', (limit,))
+                
+                return [dict(row) for row in cursor.fetchall()]
+                
+        except Exception as e:
+            logger.error(f"Error getting recent market context: {e}")
+            return []
+    
+    def get_market_context_correlation(self, hours: int = 24) -> Dict:
+        """Get market context correlation analysis
+        
+        Args:
+            hours: Number of hours to analyze
+            
+        Returns:
+            Dict: Correlation analysis results
+        """
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.execute('''
+                    SELECT btc_change_24h, eth_change_24h, market_trend,
+                           volatility_regime, regime_signal
+                    FROM market_context
+                    WHERE created_at >= datetime('now', '-{} hours')
+                    ORDER BY created_at DESC
+                '''.format(hours))
+                
+                data = [dict(row) for row in cursor.fetchall()]
+                
+                if not data:
+                    return {}
+                
+                # Calculate correlation statistics
+                btc_changes = [d['btc_change_24h'] for d in data if d['btc_change_24h'] is not None]
+                eth_changes = [d['eth_change_24h'] for d in data if d['eth_change_24h'] is not None]
+                
+                # Simple correlation calculation
+                correlation = 0.0
+                if len(btc_changes) == len(eth_changes) and len(btc_changes) > 1:
+                    import numpy as np
+                    correlation = np.corrcoef(btc_changes, eth_changes)[0, 1] if len(btc_changes) > 1 else 0.0
+                
+                # Trend analysis
+                trends = [d['market_trend'] for d in data if d['market_trend']]
+                trend_counts = {}
+                for trend in trends:
+                    trend_counts[trend] = trend_counts.get(trend, 0) + 1
+                
+                return {
+                    'btc_eth_correlation': correlation,
+                    'avg_btc_change': sum(btc_changes) / len(btc_changes) if btc_changes else 0,
+                    'avg_eth_change': sum(eth_changes) / len(eth_changes) if eth_changes else 0,
+                    'trend_distribution': trend_counts,
+                    'data_points': len(data)
+                }
+                
+        except Exception as e:
+            logger.error(f"Error getting market context correlation: {e}")
+            return {}
 
 # Singleton instance - ensures only one database connection across the application
 _db_instance = None

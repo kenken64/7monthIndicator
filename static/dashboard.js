@@ -32,6 +32,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Load chart analysis data
     loadChartAnalysis();
+    
+    // Load market context data
+    loadMarketContext();
+    
+    // Auto-refresh market context every 5 minutes
+    setInterval(loadMarketContext, 300000);
 });
 
 function initializeCharts() {
@@ -1257,4 +1263,91 @@ function formatTimestamp(timestamp) {
     } catch (error) {
         return timestamp;
     }
+}
+
+async function loadMarketContext() {
+    try {
+        console.log('Loading market context...');
+        const response = await fetch('/api/market-context');
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            const data = result.data;
+            
+            // Update BTC data
+            document.getElementById('btcPrice').textContent = `$${formatNumber(data.btc_price)}`;
+            const btcChange = data.btc_change_24h;
+            const btcChangeEl = document.getElementById('btcChange');
+            btcChangeEl.textContent = `${btcChange >= 0 ? '+' : ''}${btcChange.toFixed(2)}%`;
+            btcChangeEl.className = btcChange >= 0 ? 'text-green-600' : 'text-red-600';
+            
+            // Update ETH data
+            document.getElementById('ethPrice').textContent = `$${formatNumber(data.eth_price)}`;
+            const ethChange = data.eth_change_24h;
+            const ethChangeEl = document.getElementById('ethChange');
+            ethChangeEl.textContent = `${ethChange >= 0 ? '+' : ''}${ethChange.toFixed(2)}%`;
+            ethChangeEl.className = ethChange >= 0 ? 'text-green-600' : 'text-red-600';
+            
+            // Update BTC dominance
+            document.getElementById('btcDominance').textContent = `${data.btc_dominance.toFixed(1)}%`;
+            
+            // Update Fear & Greed Index
+            const fgIndex = data.fear_greed_index;
+            const fgEl = document.getElementById('fearGreedIndex');
+            fgEl.textContent = fgIndex;
+            
+            // Color code Fear & Greed Index
+            if (fgIndex < 25) {
+                fgEl.className = 'text-lg font-bold text-red-600';
+            } else if (fgIndex > 75) {
+                fgEl.className = 'text-lg font-bold text-green-600';
+            } else {
+                fgEl.className = 'text-lg font-bold text-yellow-600';
+            }
+            
+            // Update cross-asset signals
+            document.getElementById('marketTrend').textContent = capitalizeFirst(data.market_trend);
+            
+            if (data.cross_asset_signal) {
+                document.getElementById('btcTrend').textContent = capitalizeFirst(data.cross_asset_signal.btc_trend.replace('_', ' '));
+                document.getElementById('marketRegime').textContent = capitalizeFirst(data.cross_asset_signal.regime_signal.replace('_', ' '));
+            }
+            
+            console.log('Market context loaded successfully');
+        } else {
+            console.warn('Market context data not available:', result.message);
+            // Set fallback values
+            document.getElementById('btcPrice').textContent = 'N/A';
+            document.getElementById('ethPrice').textContent = 'N/A';
+            document.getElementById('btcDominance').textContent = 'N/A';
+            document.getElementById('fearGreedIndex').textContent = 'N/A';
+            document.getElementById('marketTrend').textContent = 'N/A';
+            document.getElementById('btcTrend').textContent = 'N/A';
+            document.getElementById('marketRegime').textContent = 'N/A';
+        }
+    } catch (error) {
+        console.error('Error loading market context:', error);
+        // Set error indicators
+        ['btcPrice', 'ethPrice', 'btcDominance', 'fearGreedIndex', 'marketTrend', 'btcTrend', 'marketRegime'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = 'Error';
+        });
+    }
+}
+
+function formatNumber(num) {
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    } else if (num >= 1) {
+        return num.toFixed(0);
+    } else {
+        return num.toFixed(4);
+    }
+}
+
+function capitalizeFirst(str) {
+    if (!str) return str;
+    return str.charAt(0).toUpperCase() + str.slice(1);
 }

@@ -26,6 +26,7 @@ import logging
 from typing import Dict, List, Tuple, Any
 import random
 from enhanced_reward_system import EnhancedRewardCalculator, TradeMetrics
+from cross_asset_correlation import CrossAssetAnalyzer, CrossAssetSignal
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -46,17 +47,19 @@ class SimpleTradingAgent:
     - Training statistics and performance tracking
     """
     
-    def __init__(self, learning_rate=0.1, discount_factor=0.95, epsilon=0.1):
+    def __init__(self, learning_rate=0.1, discount_factor=0.95, epsilon=0.1, use_cross_asset=True):
         """Initialize Q-Learning agent with hyperparameters
         
         Args:
             learning_rate: Learning rate for Q-value updates (default: 0.1)
             discount_factor: Future reward discount factor (default: 0.95)
             epsilon: Exploration rate for epsilon-greedy policy (default: 0.1)
+            use_cross_asset: Enable cross-asset correlation features (default: True)
         """
         self.lr = learning_rate
         self.gamma = discount_factor
         self.epsilon = epsilon
+        self.use_cross_asset = use_cross_asset
         
         # Q-table: state -> action -> Q-value (tabular representation)
         self.q_table = {}
@@ -68,6 +71,12 @@ class SimpleTradingAgent:
         # Learning statistics for tracking training progress
         self.training_history = []
         self.total_episodes = 0
+        
+        # Cross-asset correlation analyzer
+        if self.use_cross_asset:
+            self.cross_asset_analyzer = CrossAssetAnalyzer()
+        else:
+            self.cross_asset_analyzer = None
         
     def discretize_state(self, indicators: Dict) -> str:
         """Convert continuous indicators to discrete state with timing features"""
@@ -132,10 +141,44 @@ class SimpleTradingAgent:
         price_vs_ema9 = 'above_ema9' if price > ema_9 else 'below_ema9'
         price_vs_ema21 = 'above_ema21' if price > ema_21 else 'below_ema21'
         
-        # Create enhanced state string with timing features
-        state = f"{rsi_state}_{macd_state}_{macd_hist_state}_{price_vs_vwap}_{price_vs_ema9}_{price_vs_ema21}_{hour_state}_{session_state}"
+        # Create base state string with timing features
+        base_state = f"{rsi_state}_{macd_state}_{macd_hist_state}_{price_vs_vwap}_{price_vs_ema9}_{price_vs_ema21}_{hour_state}_{session_state}"
         
-        return state
+        # Add cross-asset correlation features if enabled
+        if self.use_cross_asset and self.cross_asset_analyzer:
+            try:
+                cross_signal = self.cross_asset_analyzer.generate_cross_asset_signal(price, indicators)
+                cross_state = f"{cross_signal.btc_trend}_{cross_signal.market_breadth}_{cross_signal.regime_signal}"
+                enhanced_state = f"{base_state}_{cross_state}"
+                return enhanced_state
+            except Exception as e:
+                logger.warning(f"Cross-asset analysis failed: {e}")
+                return base_state
+        
+        return base_state
+    
+    def get_market_context(self) -> Dict:
+        """Get current market context for enhanced decision making"""
+        if self.use_cross_asset and self.cross_asset_analyzer:
+            try:
+                market_context = self.cross_asset_analyzer.get_market_context()
+                if market_context:
+                    return {
+                        'btc_price': market_context.btc_price,
+                        'btc_change_24h': market_context.btc_change_24h,
+                        'btc_dominance': market_context.btc_dominance,
+                        'eth_price': market_context.eth_price,
+                        'eth_change_24h': market_context.eth_change_24h,
+                        'fear_greed_index': market_context.fear_greed_index,
+                        'market_trend': market_context.market_trend,
+                        'volatility_regime': market_context.volatility_regime,
+                        'correlation_signal': market_context.correlation_signal,
+                        'timestamp': market_context.timestamp.isoformat()
+                    }
+            except Exception as e:
+                logger.error(f"Error getting market context: {e}")
+        
+        return {}
     
     def get_action(self, state: str, training: bool = True) -> str:
         """Get action using epsilon-greedy policy"""

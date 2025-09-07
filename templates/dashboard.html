@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trading Bot Dashboard</title>
+    <title>CryptoCurrency AI Trading Bot Dashboard (Experimental)</title>
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -46,7 +46,7 @@
     <header class="bg-white shadow-sm border-b">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center py-4 space-y-3 sm:space-y-0">
-                <h1 class="text-xl sm:text-2xl font-bold text-gray-900">🤖 Trading Bot Dashboard</h1>
+                <h1 class="text-xl sm:text-2xl font-bold text-gray-900">🤖 CryptoCurrency AI Trading Bot Dashboard (Experimental)</h1>
                 <div class="flex items-center space-x-2 sm:space-x-4 w-full sm:w-auto mobile-stack sm:flex-row">
                     <select id="symbolSelect" class="border border-gray-300 rounded px-2 py-1 sm:px-3 sm:py-2 text-sm sm:text-base flex-1 sm:flex-none">
                         <option value="SUIUSDC">SUIUSDC</option>
@@ -144,6 +144,47 @@
                     <div class="mt-4 text-xs text-gray-500" id="analysisTimestamp">
                         Last updated: -
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Market Context Section -->
+        <div class="card mb-8">
+            <h3 class="text-lg font-semibold mb-4">🌍 Market Context & Cross-Asset Analysis</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="metric metric-neutral">
+                    <div class="text-lg font-bold" id="btcPrice">-</div>
+                    <div class="text-sm text-gray-600">BTC Price</div>
+                    <div class="text-xs" id="btcChange">-</div>
+                </div>
+                <div class="metric metric-neutral">
+                    <div class="text-lg font-bold" id="ethPrice">-</div>
+                    <div class="text-sm text-gray-600">ETH Price</div>
+                    <div class="text-xs" id="ethChange">-</div>
+                </div>
+                <div class="metric metric-neutral">
+                    <div class="text-lg font-bold" id="btcDominance">-</div>
+                    <div class="text-sm text-gray-600">BTC Dominance</div>
+                </div>
+                <div class="metric metric-neutral">
+                    <div class="text-lg font-bold" id="fearGreedIndex">-</div>
+                    <div class="text-sm text-gray-600">Fear & Greed</div>
+                </div>
+            </div>
+            
+            <!-- Cross-Asset Signals -->
+            <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="bg-gray-50 p-3 rounded">
+                    <div class="text-sm font-semibold text-gray-700">Market Trend</div>
+                    <div class="text-lg font-bold" id="marketTrend">-</div>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <div class="text-sm font-semibold text-gray-700">BTC Trend</div>
+                    <div class="text-lg font-bold" id="btcTrend">-</div>
+                </div>
+                <div class="bg-gray-50 p-3 rounded">
+                    <div class="text-sm font-semibold text-gray-700">Market Regime</div>
+                    <div class="text-lg font-bold" id="marketRegime">-</div>
                 </div>
             </div>
         </div>
