@@ -25,6 +25,7 @@ from datetime import datetime
 import logging
 from typing import Dict, List, Tuple, Any
 import random
+from enhanced_reward_system import EnhancedRewardCalculator, TradeMetrics
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -203,10 +204,10 @@ class SimpleTradingAgent:
 
 class TradingSimulator:
     """
-    Simple trading simulator for RL training
+    Enhanced trading simulator for RL training with advanced reward system
     """
     
-    def __init__(self, data: List[Dict]):
+    def __init__(self, data: List[Dict], use_enhanced_rewards: bool = True):
         self.data = data
         self.current_idx = 0
         self.position = None  # None, 'LONG', 'SHORT'
@@ -214,6 +215,13 @@ class TradingSimulator:
         self.balance = 1000
         self.initial_balance = 1000
         self.trades_history = []
+        self.use_enhanced_rewards = use_enhanced_rewards
+        
+        # Enhanced reward system
+        self.reward_calculator = EnhancedRewardCalculator() if use_enhanced_rewards else None
+        self.position_entry_time = None
+        self.position_max_profit = 0.0
+        self.position_max_loss = 0.0
         
     def reset(self):
         """Reset simulator state"""
@@ -223,6 +231,13 @@ class TradingSimulator:
         self.balance = 1000
         self.initial_balance = 1000
         self.trades_history = []
+        self.position_entry_time = None
+        self.position_max_profit = 0.0
+        self.position_max_loss = 0.0
+        
+        # Reset enhanced reward calculator
+        if self.reward_calculator:
+            self.reward_calculator.reset_metrics()
         
         return self.get_current_indicators()
     
@@ -234,41 +249,104 @@ class TradingSimulator:
         return self.data[self.current_idx]
     
     def step(self, action: str) -> Tuple[Dict, float, bool]:
-        """Execute action and return (next_state, reward, done)"""
+        """Execute action and return (next_state, reward, done) with enhanced rewards"""
         
         if self.current_idx >= len(self.data) - 1:
             return {}, 0, True
         
         current_price = self.data[self.current_idx].get('price', 3.7)
+        current_indicators = self.get_current_indicators()
         reward = 0
         
-        # Execute action
+        # Calculate position duration
+        position_duration_minutes = 0
+        if self.position_entry_time is not None:
+            position_duration_minutes = self.current_idx - self.position_entry_time
+        
+        # Update position profit/loss tracking
+        if self.position and self.entry_price > 0:
+            if self.position == 'LONG':
+                unrealized_pnl = (current_price - self.entry_price) / self.entry_price
+            else:
+                unrealized_pnl = (self.entry_price - current_price) / self.entry_price
+            
+            self.position_max_profit = max(self.position_max_profit, unrealized_pnl)
+            self.position_max_loss = min(self.position_max_loss, unrealized_pnl)
+        
+        # Execute action with enhanced reward calculation
         if action == 'BUY' and not self.position:
             self.position = 'LONG'
             self.entry_price = current_price
-            reward = -0.001  # Small transaction cost
+            self.position_entry_time = self.current_idx
+            self.position_max_profit = 0.0
+            self.position_max_loss = 0.0
+            
+            # Use enhanced reward system
+            if self.use_enhanced_rewards and self.reward_calculator:
+                reward = self.reward_calculator.calculate_enhanced_reward(
+                    trade_metrics=None,
+                    action=action,
+                    current_position_duration=0,
+                    market_indicators=current_indicators
+                )
+            else:
+                reward = -0.001  # Small transaction cost
             
         elif action == 'SELL' and not self.position:
             self.position = 'SHORT'
             self.entry_price = current_price
-            reward = -0.001
+            self.position_entry_time = self.current_idx
+            self.position_max_profit = 0.0
+            self.position_max_loss = 0.0
+            
+            if self.use_enhanced_rewards and self.reward_calculator:
+                reward = self.reward_calculator.calculate_enhanced_reward(
+                    trade_metrics=None,
+                    action=action,
+                    current_position_duration=0,
+                    market_indicators=current_indicators
+                )
+            else:
+                reward = -0.001
             
         elif action == 'CLOSE' and self.position:
-            # Close position and calculate reward
+            # Close position and calculate comprehensive reward
             if self.position == 'LONG':
                 pnl_pct = (current_price - self.entry_price) / self.entry_price
             else:  # SHORT
                 pnl_pct = (self.entry_price - current_price) / self.entry_price
             
-            # Reward based on PnL
-            if pnl_pct > 0:
-                reward = pnl_pct * 50  # 50x reward for profits
-            else:
-                reward = pnl_pct * 100  # 100x penalty for losses (discourage losses)
-            
             # Update balance
             pnl_amount = self.balance * 0.02 * pnl_pct  # 2% risk per trade
             self.balance += pnl_amount
+            
+            # Create trade metrics for enhanced reward
+            if self.use_enhanced_rewards and self.reward_calculator:
+                trade_metrics = TradeMetrics(
+                    pnl_pct=pnl_pct,
+                    pnl_amount=pnl_amount,
+                    entry_price=self.entry_price,
+                    exit_price=current_price,
+                    position_type=self.position,
+                    duration_minutes=position_duration_minutes,
+                    max_adverse_excursion=self.position_max_loss,
+                    max_favorable_excursion=self.position_max_profit,
+                    volume_at_entry=current_indicators.get('volume', 1.0),
+                    volatility_at_entry=current_indicators.get('volatility', 0.02)
+                )
+                
+                reward = self.reward_calculator.calculate_enhanced_reward(
+                    trade_metrics=trade_metrics,
+                    action=action,
+                    current_position_duration=position_duration_minutes,
+                    market_indicators=current_indicators
+                )
+            else:
+                # Traditional reward system
+                if pnl_pct > 0:
+                    reward = pnl_pct * 50  # 50x reward for profits
+                else:
+                    reward = pnl_pct * 100  # 100x penalty for losses
             
             # Record trade
             self.trades_history.append({
@@ -276,26 +354,38 @@ class TradingSimulator:
                 'exit_price': current_price,
                 'position': self.position,
                 'pnl_pct': pnl_pct,
-                'pnl_amount': pnl_amount
+                'pnl_amount': pnl_amount,
+                'duration_minutes': position_duration_minutes,
+                'max_adverse_excursion': self.position_max_loss,
+                'max_favorable_excursion': self.position_max_profit
             })
             
             # Reset position
             self.position = None
             self.entry_price = 0
+            self.position_entry_time = None
+            self.position_max_profit = 0.0
+            self.position_max_loss = 0.0
             
         elif action == 'HOLD':
-            # Small penalty for holding (encourages action)
-            reward = -0.0001
-            
-            # Additional penalty for holding losing positions
-            if self.position and self.entry_price > 0:
-                if self.position == 'LONG':
-                    unrealized_pnl = (current_price - self.entry_price) / self.entry_price
-                else:
-                    unrealized_pnl = (self.entry_price - current_price) / self.entry_price
-                
-                if unrealized_pnl < -0.02:  # More than 2% loss
-                    reward -= 0.001  # Extra penalty for holding losers
+            if self.use_enhanced_rewards and self.reward_calculator:
+                reward = self.reward_calculator.calculate_enhanced_reward(
+                    trade_metrics=None,
+                    action=action,
+                    current_position_duration=position_duration_minutes,
+                    market_indicators=current_indicators
+                )
+            else:
+                # Traditional hold penalty
+                reward = -0.0001
+                if self.position and self.entry_price > 0:
+                    if self.position == 'LONG':
+                        unrealized_pnl = (current_price - self.entry_price) / self.entry_price
+                    else:
+                        unrealized_pnl = (self.entry_price - current_price) / self.entry_price
+                    
+                    if unrealized_pnl < -0.02:  # More than 2% loss
+                        reward -= 0.001  # Extra penalty for holding losers
         
         # Move to next step
         self.current_idx += 1
@@ -365,7 +455,7 @@ class LightweightRLSystem:
         logger.info(f"🤖 Training RL agent for {episodes} episodes...")
         
         training_data = self.prepare_training_data()
-        self.simulator = TradingSimulator(training_data)
+        self.simulator = TradingSimulator(training_data, use_enhanced_rewards=True)
         
         best_performance = -float('inf')
         
