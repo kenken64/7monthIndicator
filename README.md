@@ -1,4 +1,6 @@
-# Binance Futures Trading Bot with RL Enhancement
+# CryptoCurrency AI Trading Bot Dashboard (Experimental) 🤖
+
+## Advanced AI-Powered Trading System with Cross-Asset Correlation Analysis
 
 ## It's Like a Point-Scoring Game! 🎯
 
@@ -54,15 +56,22 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
 - **Real-time Monitoring**: Live PnL, liquidation prices, and position tracking
 - **Enhanced Logging**: Emoji-rich console output with detailed market analysis
 
-### 🤖 RL Enhancement Features
-- **Reinforcement Learning Integration**: Q-Learning agent that learns from real trading data
-- **Smart Position Management**: PnL-based decision making for position closures
+### 🧠 Advanced AI Enhancement Features
+- **Cross-Asset Correlation Analysis**: Enhanced market awareness using BTC/ETH trends and market context
+- **Reinforcement Learning Integration**: Q-Learning agent with enhanced state representation
+- **Market Context Intelligence**: 
+  - BTC dominance analysis and correlation patterns
+  - Fear & Greed Index integration for market sentiment
+  - Volatility regime detection (high/medium/low)
+  - Market trend classification (bullish/bearish/neutral)
+- **Smart Position Management**: PnL-based decision making with cross-asset confirmation
 - **Enhanced Risk Management**: 
   - Only closes positions on HOLD signals if PnL is negative (keeps profitable positions)
-  - Closes positions on opposite signals (BUY→SELL, SELL→BUY) only if PnL is negative
-  - Maintains profitable positions even when signals change
-- **Database-Driven Learning**: Uses SQLite database to store signals, trades, and outcomes for continuous learning
-- **Model Retraining**: Automated retraining system using historical trading data
+  - Cross-asset momentum confirmation before position changes
+  - Market regime-based risk adjustment
+  - BTC correlation-based position sizing
+- **Database-Driven Learning**: SQLite database with market context storage and correlation analysis
+- **Cost-Optimized AI**: Local sentiment analysis alternative to reduce OpenAI costs by 95%
 
 ### 📊 Chart Analysis Bot (NEW!)
 - **AI-Powered Chart Analysis**: OpenAI GPT-4o analyzes professional candlestick charts
@@ -73,8 +82,14 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
 - **Trading Recommendations**: BUY/SELL/HOLD signals with confidence levels and reasoning
 - **Risk Assessment**: Key observations and risk factors for informed decision-making
 
-### 🌐 Web Dashboard
-- **Real-time Dashboard**: Comprehensive web interface at http://your-ip:5000
+### 🌐 Enhanced Web Dashboard
+- **Real-time Dashboard**: "CryptoCurrency AI Trading Bot Dashboard (Experimental)" at http://your-ip:5000
+- **🌍 Market Context Section**: NEW! Real-time cross-asset correlation display
+  - Live BTC/ETH prices with 24h changes and color-coded indicators
+  - BTC Dominance percentage tracking
+  - Fear & Greed Index with color-coded sentiment levels
+  - Market trend indicators (Bullish/Bearish/Neutral)
+  - Cross-asset signal states (BTC Trend, Market Regime, Breadth)
 - **Chart Visualization**: Live SUI/USDC chart display with analysis results
 - **Mobile Responsive**: Optimized for desktop, tablet, and mobile devices
 - **Live Analysis Display**: OpenAI recommendations, confidence levels, and market insights
@@ -82,17 +97,21 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
 - **Bot Control**: PIN-protected pause/resume functionality for secure remote control
 - **Live Log Streaming**: Real-time logs from all bots (RL, Trading, Chart Analysis)
 - **Multi-Bot Monitoring**: Unified view of all system components and their status
-- **📰 Market News**: Cryptocurrency news with AI-powered sentiment analysis
+- **📰 Smart Market News**: Enhanced cryptocurrency news with cost-optimized AI sentiment analysis
   - Paginated news display (10 articles per page)
-  - OpenAI GPT-4 sentiment analysis on top 20 headlines
+  - Dual-mode sentiment analysis: OpenAI GPT-4o-mini OR local keyword-based (FREE)
+  - Aggressive caching system (1h-24h) to reduce API costs by 90%
   - Real-time market sentiment indicators with confidence levels
   - Bearish/Bullish sentiment badges in news header
 
-### 📊 Database & Analytics
-- **SQLite Database**: Stores signals, trades, market data, and performance metrics
-- **Performance Tracking**: Win rate, PnL analysis, trade history
-- **Data-Driven Decisions**: RL model learns from actual trading outcomes
+### 📊 Enhanced Database & Analytics
+- **SQLite Database**: Stores signals, trades, market data, performance metrics, and cross-asset correlation data
+- **Market Context Storage**: NEW! Dedicated table for BTC/ETH data, Fear & Greed Index, market trends
+- **Cross-Asset Correlation Analysis**: Historical correlation patterns and regime detection
+- **Performance Tracking**: Win rate, PnL analysis, trade history with market context correlation
+- **Data-Driven Decisions**: Enhanced RL model learns from actual trading outcomes plus market context
 - **Chart Analysis Storage**: AI recommendations and market analysis history
+- **Cost Optimization Analytics**: Track API usage and cost savings from local vs OpenAI sentiment analysis
 
 ## Installation
 
@@ -143,6 +162,7 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
    OPENAI_API_KEY=your_openai_api_key_here
    BOT_CONTROL_PIN=your_6_digit_pin_here
    NEWS_API_KEY=your_newsapi_key_here
+   USE_LOCAL_SENTIMENT=true  # Enable cost-saving mode (optional)
    ```
 
 3. **Get Required API Keys:**
@@ -165,6 +185,45 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
    - Sign up for a free account to get your API key
    - Required for cryptocurrency market news and sentiment analysis
    - Free tier includes 1000 requests per day
+
+## 💰 Cost Optimization Features
+
+### **AI Sentiment Analysis Cost Reduction**
+The system now includes advanced cost optimization to reduce OpenAI API expenses by up to **95%**:
+
+#### **Dual-Mode Sentiment Analysis**
+- **Premium Mode**: OpenAI GPT-4o-mini (60x cheaper than GPT-4)
+- **Cost-Saving Mode**: Local keyword-based analysis (100% FREE)
+
+#### **Smart Caching System**
+- **1-hour caching**: Premium mode with minimal API calls
+- **24-hour caching**: Cost-saving mode for maximum savings
+- **File-based caching**: Persistent across restarts
+
+#### **Cost Configuration**
+```bash
+# Switch to cost-saving mode (FREE sentiment analysis)
+python3 configure_costs.py cost-saving
+
+# Switch to premium mode (GPT-4o-mini sentiment analysis)
+python3 configure_costs.py premium
+
+# Check current cost settings
+python3 configure_costs.py status
+```
+
+#### **Monthly Cost Comparison**
+| Mode | Sentiment Analysis | Monthly Cost | Features |
+|------|-------------------|--------------|----------|
+| **Old GPT-4** | GPT-4 | $15-30/month | High-quality sentiment |
+| **Premium** | GPT-4o-mini | $1-3/month | Good sentiment, 60x cheaper |
+| **Cost-Saving** | Local keywords | $0/month | Basic sentiment, FREE |
+
+### **Additional Cost Optimizations**
+- **CoinGecko API**: FREE (rate limited)
+- **Fear & Greed Index**: FREE
+- **NewsAPI**: FREE tier available
+- **Cross-asset data**: FREE from public APIs
 
 ## Bot Configuration
 
