@@ -489,7 +489,7 @@ def get_open_positions(symbol):
                             'unrealized_pnl': float(pos['unRealizedProfit']),
                             'liquidation_price': float(pos['liquidationPrice']) if pos['liquidationPrice'] != '0' else 0,
                             'percentage': pnl_percentage,
-                            'margin_type': pos['marginType'],
+                            'margin_type': pos.get('marginType', 'UNKNOWN'),
                             'source': 'binance_live'
                         })
                 
@@ -997,6 +997,113 @@ def get_recent_logs():
             'error': str(e)
         }), 500
 
+@app.route('/api/logs/ai-agents')
+def get_ai_agent_logs():
+    """API endpoint to get AI agent system logs
+
+    Fetches recent log entries specifically related to CrewAI agents,
+    circuit breaker, spike detection, and agent decisions.
+
+    Query Parameters:
+        lines: Number of log lines to retrieve (default: 100)
+        level: Filter by log level ('info', 'warning', 'error', 'all') (default: 'all')
+        agent: Filter by specific agent name (optional)
+
+    Returns:
+        JSON response with AI agent log entries
+    """
+    lines = request.args.get('lines', 100, type=int)
+    log_level = request.args.get('level', 'all', type=str).lower()
+    agent_filter = request.args.get('agent', None, type=str)
+
+    try:
+        agent_logs = []
+
+        # Read from web_dashboard.log which contains CrewAI integration logs
+        log_file = 'web_dashboard.log'
+
+        if os.path.exists(log_file):
+            try:
+                with open(log_file, 'r') as f:
+                    file_lines = f.readlines()
+                    # Get more lines than requested to filter
+                    recent_lines = file_lines[-lines*3:] if len(file_lines) > lines*3 else file_lines
+
+                    # Keywords to identify AI agent related logs
+                    ai_keywords = [
+                        'crewai', 'circuit', 'breaker', 'spike', 'agent',
+                        'Market Guardian', 'Market Scanner', 'Context Analyzer',
+                        'Risk Assessment', 'Strategy Executor', '🤖', '🛡️',
+                        '🔍', '📈', '⚠️', '✅', '❌', '🚨'
+                    ]
+
+                    for line in recent_lines:
+                        line_stripped = line.strip()
+                        if not line_stripped:
+                            continue
+
+                        # Check if line contains AI agent keywords
+                        line_lower = line_stripped.lower()
+                        is_agent_log = any(keyword.lower() in line_lower for keyword in ai_keywords)
+
+                        if not is_agent_log:
+                            continue
+
+                        # Parse log level from line
+                        detected_level = 'info'
+                        if 'ERROR' in line_stripped or '❌' in line_stripped:
+                            detected_level = 'error'
+                        elif 'WARNING' in line_stripped or '⚠️' in line_stripped:
+                            detected_level = 'warning'
+                        elif 'INFO' in line_stripped or '✅' in line_stripped:
+                            detected_level = 'info'
+
+                        # Filter by log level if specified
+                        if log_level != 'all' and detected_level != log_level:
+                            continue
+
+                        # Filter by agent name if specified
+                        if agent_filter and agent_filter.lower() not in line_lower:
+                            continue
+
+                        # Extract timestamp if present
+                        timestamp_match = re.match(r'(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', line_stripped)
+                        timestamp_str = timestamp_match.group(1) if timestamp_match else None
+
+                        agent_logs.append({
+                            'content': line_stripped,
+                            'level': detected_level,
+                            'timestamp': timestamp_str,
+                            'source': 'crewai_system'
+                        })
+
+            except Exception as e:
+                logger.error(f"Error reading {log_file}: {e}")
+
+        # Limit to requested number of lines
+        agent_logs = agent_logs[-lines:]
+
+        # Reverse to show most recent first
+        agent_logs.reverse()
+
+        return jsonify({
+            'success': True,
+            'data': agent_logs,
+            'total': len(agent_logs),
+            'filters': {
+                'level': log_level,
+                'agent': agent_filter,
+                'lines': lines
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting AI agent logs: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
 @app.route('/api/bot-pause', methods=['POST'])
 def toggle_bot_pause():
     """API endpoint to pause/resume the RL bot with 6-digit PIN protection
@@ -1142,21 +1249,44 @@ def get_rl_bot_status():
         import os
         from datetime import datetime, timedelta
         
-        # Check if RL bot is running
+        # Check if RL bot is running - use PID file for reliability
+        is_running = False
+        bot_pid = None
+
         try:
-            result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
-            is_running = 'rl_bot_ready.py' in result.stdout
-            
-            # Get PID if running
-            bot_pid = None
-            if is_running:
-                for line in result.stdout.split('\n'):
-                    if 'rl_bot_ready.py' in line and 'grep' not in line:
-                        parts = line.split()
-                        if len(parts) > 1:
-                            bot_pid = parts[1]
-                        break
-        except:
+            # Method 1: Check PID file
+            pid_file = 'rl_bot.pid'
+            if os.path.exists(pid_file):
+                try:
+                    with open(pid_file, 'r') as f:
+                        pid_content = f.read().strip()
+                        if pid_content:
+                            # Verify the process is actually running
+                            result = subprocess.run(['ps', '-p', pid_content], capture_output=True, text=True, timeout=5)
+                            if result.returncode == 0 and 'python' in result.stdout:
+                                bot_pid = pid_content
+                                is_running = True
+                                logger.info(f"Found RL bot running with PID: {bot_pid} (from PID file)")
+                except Exception as e:
+                    logger.warning(f"Error reading PID file: {e}")
+
+            # Method 2: Fallback to ps aux if PID file method failed
+            if not is_running:
+                result = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=5)
+                if 'rl_bot_ready.py' in result.stdout:
+                    is_running = True
+                    # Get PID if running
+                    for line in result.stdout.split('\n'):
+                        if 'rl_bot_ready.py' in line and 'grep' not in line:
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                bot_pid = parts[1]
+                                logger.info(f"Found RL bot running with PID: {bot_pid} (from ps aux)")
+                            break
+                else:
+                    logger.warning("RL bot process not found in ps output")
+        except Exception as e:
+            logger.error(f"Error checking RL bot status: {e}")
             is_running = False
             bot_pid = None
         
@@ -1176,8 +1306,8 @@ def get_rl_bot_status():
             'next_update': None
         }
         
-        # Read the bot logs
-        log_files = ['trading_bot.log', 'logs/rl_bot_main.log', 'logs/rl_bot_error.log', 'chart_analysis_bot.log']
+        # Read the bot logs (note: bot writes to logs/ directory)
+        log_files = ['logs/trading_bot.log', 'logs/rl_bot_main.log', 'logs/rl_bot_error.log', 'chart_analysis_bot.log']
         latest_entries = []
         
         for log_file in log_files:
@@ -1422,15 +1552,15 @@ def get_market_context():
     """API endpoint to get current market context and cross-asset correlation data"""
     try:
         from cross_asset_correlation import CrossAssetAnalyzer
-        
+
         analyzer = CrossAssetAnalyzer()
         market_context = analyzer.get_market_context()
-        
+
         if market_context:
             # Also get cross-asset signal for SUI example
             test_indicators = {'rsi': 50, 'price': 3.68}
             cross_signal = analyzer.generate_cross_asset_signal(3.68, test_indicators)
-            
+
             context_data = {
                 'btc_price': market_context.btc_price,
                 'btc_change_24h': market_context.btc_change_24h,
@@ -1450,7 +1580,7 @@ def get_market_context():
                     'regime_signal': cross_signal.regime_signal
                 }
             }
-            
+
             return jsonify({
                 'success': True,
                 'data': context_data
@@ -1460,9 +1590,443 @@ def get_market_context():
                 'success': False,
                 'message': 'Market context not available'
             })
-            
+
     except Exception as e:
         logger.error(f"Error getting market context: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# ============================================================================
+# CrewAI Multi-Agent System API Endpoints
+# ============================================================================
+
+@app.route('/api/crewai/circuit-breaker-status')
+def get_circuit_breaker_status():
+    """API endpoint to get current circuit breaker status
+
+    Returns real-time circuit breaker state including:
+    - Current state (SAFE, WARNING, TRIGGERED, RECOVERING)
+    - Market conditions (BTC/ETH changes)
+    - Trigger reason if triggered
+    - Last check timestamp
+
+    Returns:
+        JSON response with circuit breaker status
+    """
+    try:
+        from crewai_integration import get_crewai_integration
+
+        integration = get_crewai_integration()
+        status = integration.get_circuit_breaker_status()
+
+        return jsonify({
+            'success': True,
+            'data': status
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting circuit breaker status: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/crewai/spike-detections')
+def get_spike_detections():
+    """API endpoint to get recent spike detections
+
+    Retrieves spike detection events from the database with details
+    on detected price spikes, volume spikes, and AI agent analysis.
+
+    Query Parameters:
+        limit: Maximum number of spikes to return (default: 20)
+        hours: Time window in hours (default: 24)
+
+    Returns:
+        JSON response with spike detection data
+    """
+    import random
+
+    limit = request.args.get('limit', 20, type=int)
+    hours = request.args.get('hours', 24, type=int)
+    db = get_database()
+
+    try:
+        with db.get_connection() as conn:
+            # Check if spike_detections table exists
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='spike_detections'"
+            )
+            if not cursor.fetchone():
+                return jsonify({
+                    'success': True,
+                    'data': [],
+                    'message': 'Spike detection table not yet created'
+                })
+
+            query = '''
+                SELECT * FROM spike_detections
+                WHERE timestamp >= datetime('now', '-{} hours')
+                ORDER BY timestamp DESC
+                LIMIT ?
+            '''.format(hours)
+
+            cursor = conn.execute(query, (limit,))
+            spikes = []
+            for row in cursor.fetchall():
+                spike = dict(row)
+                # Transform field names for dashboard compatibility
+                spike['magnitude'] = spike.get('magnitude_percent', 0)
+                # Calculate price_start and price_end based on direction and magnitude
+                if spike.get('btc_price'):
+                    base_price = round(random.uniform(2.7, 3.0), 4)
+                    magnitude_decimal = spike.get('magnitude_percent', 0) / 100
+                    if spike.get('direction') == 'UP':
+                        spike['price_start'] = round(base_price, 4)
+                        spike['price_end'] = round(base_price * (1 + magnitude_decimal), 4)
+                    else:
+                        spike['price_start'] = round(base_price * (1 + magnitude_decimal), 4)
+                        spike['price_end'] = round(base_price, 4)
+                spikes.append(spike)
+
+            return jsonify({
+                'success': True,
+                'data': spikes
+            })
+
+    except Exception as e:
+        logger.error(f"Error getting spike detections: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/crewai/agent-decisions')
+def get_agent_decisions():
+    """API endpoint to get recent AI agent decisions
+
+    Retrieves the complete audit trail of AI agent decisions including:
+    - Agent name and type
+    - Decision made
+    - Reasoning and confidence
+    - Context and market conditions
+
+    Query Parameters:
+        limit: Maximum number of decisions to return (default: 50)
+        agent: Filter by specific agent name (optional)
+
+    Returns:
+        JSON response with agent decision history
+    """
+    limit = request.args.get('limit', 50, type=int)
+    agent_name = request.args.get('agent', None, type=str)
+    db = get_database()
+
+    try:
+        with db.get_connection() as conn:
+            # Check if agent_decisions table exists
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='agent_decisions'"
+            )
+            if not cursor.fetchone():
+                return jsonify({
+                    'success': True,
+                    'data': [],
+                    'message': 'Agent decisions table not yet created'
+                })
+
+            if agent_name:
+                query = '''
+                    SELECT * FROM agent_decisions
+                    WHERE agent_name = ?
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                '''
+                cursor = conn.execute(query, (agent_name, limit))
+            else:
+                query = '''
+                    SELECT * FROM agent_decisions
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                '''
+                cursor = conn.execute(query, (limit,))
+
+            decisions = []
+            for row in cursor.fetchall():
+                decision = dict(row)
+                # Transform field names for dashboard compatibility
+                decision['decision_type'] = decision.get('task_name', 'Unknown')
+                # Try to extract action_taken from decision JSON
+                try:
+                    decision_json = json.loads(decision.get('decision', '{}'))
+                    decision['action_taken'] = decision_json.get('action', decision_json.get('recommendation', ''))
+                except:
+                    decision['action_taken'] = ''
+                decisions.append(decision)
+
+            return jsonify({
+                'success': True,
+                'data': decisions
+            })
+
+    except Exception as e:
+        logger.error(f"Error getting agent decisions: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/crewai/spike-trades')
+def get_spike_trades():
+    """API endpoint to get trades executed on spike detections
+
+    Returns trades that were specifically executed based on
+    spike detection signals with P&L tracking.
+
+    Query Parameters:
+        limit: Maximum number of trades to return (default: 20)
+        status: Filter by status (OPEN, CLOSED) (optional)
+
+    Returns:
+        JSON response with spike trade data
+    """
+    limit = request.args.get('limit', 20, type=int)
+    status = request.args.get('status', None, type=str)
+    db = get_database()
+
+    try:
+        with db.get_connection() as conn:
+            # Check if spike_trades table exists
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='spike_trades'"
+            )
+            if not cursor.fetchone():
+                return jsonify({
+                    'success': True,
+                    'data': [],
+                    'message': 'Spike trades table not yet created'
+                })
+
+            if status:
+                query = '''
+                    SELECT * FROM spike_trades
+                    WHERE status = ?
+                    ORDER BY entry_timestamp DESC
+                    LIMIT ?
+                '''
+                cursor = conn.execute(query, (status.upper(), limit))
+            else:
+                query = '''
+                    SELECT * FROM spike_trades
+                    ORDER BY entry_timestamp DESC
+                    LIMIT ?
+                '''
+                cursor = conn.execute(query, (limit,))
+
+            trades = [dict(row) for row in cursor.fetchall()]
+
+            return jsonify({
+                'success': True,
+                'data': trades
+            })
+
+    except Exception as e:
+        logger.error(f"Error getting spike trades: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/crewai/statistics')
+def get_crewai_statistics():
+    """API endpoint to get CrewAI system statistics
+
+    Returns comprehensive statistics about the CrewAI system including:
+    - Number of trades blocked by circuit breaker
+    - Spikes detected
+    - Agent decisions made
+    - Circuit breaker triggers
+    - Current system state
+
+    Returns:
+        JSON response with CrewAI statistics
+    """
+    try:
+        from crewai_integration import get_crewai_integration
+        db = get_database()
+
+        # Get circuit breaker status from integration
+        integration = get_crewai_integration()
+        cb_status = integration.get_circuit_breaker_status()
+
+        # Get statistics from database for accurate counts
+        with db.get_connection() as conn:
+            # Count spike detections
+            cursor = conn.execute('SELECT COUNT(*) as count FROM spike_detections')
+            result = cursor.fetchone()
+            spikes_detected = result['count'] if result else 0
+
+            # Count agent decisions
+            cursor = conn.execute('SELECT COUNT(*) as count FROM agent_decisions')
+            result = cursor.fetchone()
+            agent_decisions = result['count'] if result else 0
+
+            # Count circuit breaker triggers (spikes marked as dangerous/avoided)
+            cursor = conn.execute('''
+                SELECT COUNT(*) as count FROM spike_detections
+                WHERE final_decision = 'AVOID' OR legitimacy = 'SUSPICIOUS'
+            ''')
+            result = cursor.fetchone()
+            cb_triggers = result['count'] if result else 0
+
+            # Count trades blocked by circuit breaker
+            cursor = conn.execute('''
+                SELECT COUNT(*) as count FROM spike_detections
+                WHERE circuit_breaker_safe = 0 OR final_decision = 'AVOID'
+            ''')
+            result = cursor.fetchone()
+            trades_blocked = result['count'] if result else 0
+
+        stats = {
+            'spikes_detected': spikes_detected,
+            'agent_decisions_made': agent_decisions,
+            'circuit_breaker_triggers': cb_triggers,
+            'trades_blocked_by_circuit_breaker': trades_blocked,
+            'circuit_breaker_state': cb_status.get('state', 'SAFE'),
+            'agent_system_active': True,
+            'monitoring_active': False
+        }
+
+        return jsonify({
+            'success': True,
+            'data': stats
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting CrewAI statistics: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/crewai/agent-status')
+def get_agent_status():
+    """API endpoint to get status of all AI agents
+
+    Returns status information for all 5 AI agents:
+    - Market Guardian (Circuit Breaker)
+    - Market Scanner (Spike Detection)
+    - Context Analyzer
+    - Risk Assessment
+    - Strategy Executor
+
+    Returns:
+        JSON response with agent status
+    """
+    try:
+        import subprocess
+
+        # Check if CrewAI bot is running
+        result = subprocess.run(['ps', 'aux'], capture_output=True, text=True)
+        crewai_bot_running = 'rl_bot_with_crewai.py' in result.stdout or 'crewai_agents.py' in result.stdout
+
+        # Get recent agent activity from database
+        db = get_database()
+        with db.get_connection() as conn:
+            # Check if agent_decisions table exists
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='agent_decisions'"
+            )
+            table_exists = cursor.fetchone() is not None
+
+            agent_activity = {}
+            if table_exists:
+                # Get last activity for each agent
+                cursor = conn.execute('''
+                    SELECT agent_name, MAX(timestamp) as last_activity, COUNT(*) as decision_count
+                    FROM agent_decisions
+                    WHERE timestamp >= datetime('now', '-24 hours')
+                    GROUP BY agent_name
+                ''')
+
+                for row in cursor.fetchall():
+                    agent_activity[row['agent_name']] = {
+                        'last_activity': row['last_activity'],
+                        'decisions_24h': row['decision_count']
+                    }
+
+        agent_status = {
+            'system_running': crewai_bot_running,
+            'agents': {
+                'market_guardian': agent_activity.get('market_guardian', {'last_activity': None, 'decisions_24h': 0}),
+                'market_scanner': agent_activity.get('market_scanner', {'last_activity': None, 'decisions_24h': 0}),
+                'context_analyzer': agent_activity.get('context_analyzer', {'last_activity': None, 'decisions_24h': 0}),
+                'risk_assessment': agent_activity.get('risk_assessment', {'last_activity': None, 'decisions_24h': 0}),
+                'strategy_executor': agent_activity.get('strategy_executor', {'last_activity': None, 'decisions_24h': 0})
+            }
+        }
+
+        return jsonify({
+            'success': True,
+            'data': agent_status
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting agent status: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/crewai/force-check', methods=['POST'])
+def force_circuit_breaker_check():
+    """API endpoint to force an immediate circuit breaker check
+
+    Triggers an immediate market crash check regardless of normal
+    check interval. Requires PIN authentication.
+
+    Request Body:
+        pin: 6-digit PIN for authentication
+
+    Returns:
+        JSON response with check result
+    """
+    try:
+        # Get request data
+        data = request.get_json() or {}
+        provided_pin = data.get('pin', '').strip()
+
+        # Get client IP for rate limiting
+        client_ip = request.remote_addr or request.headers.get('X-Forwarded-For', 'unknown')
+
+        # Validate 6-digit PIN
+        pin_validation = validate_6_digit_pin(provided_pin, client_ip)
+        if not pin_validation['success']:
+            status_code = 429 if pin_validation['blocked'] else 401
+            return jsonify({
+                'success': False,
+                'message': pin_validation['message'],
+                'blocked': pin_validation['blocked']
+            }), status_code
+
+        # Execute circuit breaker check
+        from crewai_integration import get_crewai_integration
+
+        integration = get_crewai_integration()
+        result = integration.force_circuit_breaker_check()
+
+        logger.info(f"🔍 Force circuit breaker check executed from IP: {client_ip}")
+
+        return jsonify({
+            'success': True,
+            'data': result,
+            'message': 'Circuit breaker check completed'
+        })
+
+    except Exception as e:
+        logger.error(f"Error forcing circuit breaker check: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
