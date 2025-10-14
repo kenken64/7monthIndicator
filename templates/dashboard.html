@@ -189,6 +189,135 @@
             </div>
         </div>
 
+        <!-- CrewAI Multi-Agent System Section -->
+        <div class="card mb-8">
+            <h3 class="text-lg font-semibold mb-4">🤖 AI Multi-Agent System</h3>
+
+            <!-- Circuit Breaker Status -->
+            <div class="bg-gray-50 p-4 rounded-lg mb-4">
+                <div class="flex items-center justify-between mb-2">
+                    <h4 class="font-semibold text-sm">🛡️ Circuit Breaker Status</h4>
+                    <span class="text-xs font-bold px-3 py-1 rounded" id="circuitBreakerBadge">Loading...</span>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                    <div>
+                        <span class="text-gray-600">State:</span>
+                        <span class="font-bold ml-2" id="circuitBreakerState">-</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Last Check:</span>
+                        <span class="font-bold ml-2" id="circuitBreakerLastCheck">-</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Trigger Reason:</span>
+                        <span class="font-bold ml-2" id="circuitBreakerReason">None</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Agents Status -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+                <div class="bg-white border-2 border-gray-200 p-3 rounded-lg">
+                    <div class="text-xs text-gray-600 mb-1">🛡️ Market Guardian</div>
+                    <div class="text-sm font-bold" id="agentMarketGuardian">-</div>
+                    <div class="text-xs text-gray-500" id="agentMarketGuardianActivity">-</div>
+                </div>
+                <div class="bg-white border-2 border-gray-200 p-3 rounded-lg">
+                    <div class="text-xs text-gray-600 mb-1">🔍 Market Scanner</div>
+                    <div class="text-sm font-bold" id="agentMarketScanner">-</div>
+                    <div class="text-xs text-gray-500" id="agentMarketScannerActivity">-</div>
+                </div>
+                <div class="bg-white border-2 border-gray-200 p-3 rounded-lg">
+                    <div class="text-xs text-gray-600 mb-1">📊 Context Analyzer</div>
+                    <div class="text-sm font-bold" id="agentContextAnalyzer">-</div>
+                    <div class="text-xs text-gray-500" id="agentContextAnalyzerActivity">-</div>
+                </div>
+                <div class="bg-white border-2 border-gray-200 p-3 rounded-lg">
+                    <div class="text-xs text-gray-600 mb-1">⚖️ Risk Assessment</div>
+                    <div class="text-sm font-bold" id="agentRiskAssessment">-</div>
+                    <div class="text-xs text-gray-500" id="agentRiskAssessmentActivity">-</div>
+                </div>
+                <div class="bg-white border-2 border-gray-200 p-3 rounded-lg">
+                    <div class="text-xs text-gray-600 mb-1">⚡ Strategy Executor</div>
+                    <div class="text-sm font-bold" id="agentStrategyExecutor">-</div>
+                    <div class="text-xs text-gray-500" id="agentStrategyExecutorActivity">-</div>
+                </div>
+            </div>
+
+            <!-- System Statistics -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="bg-blue-50 p-3 rounded text-center">
+                    <div class="text-xs text-gray-600">Spikes Detected</div>
+                    <div class="text-lg font-bold text-blue-600" id="spikesDetected">0</div>
+                </div>
+                <div class="bg-green-50 p-3 rounded text-center">
+                    <div class="text-xs text-gray-600">Agent Decisions</div>
+                    <div class="text-lg font-bold text-green-600" id="agentDecisions">0</div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded text-center">
+                    <div class="text-xs text-gray-600">CB Triggers</div>
+                    <div class="text-lg font-bold text-purple-600" id="cbTriggers">0</div>
+                </div>
+                <div class="bg-orange-50 p-3 rounded text-center">
+                    <div class="text-xs text-gray-600">System Status</div>
+                    <div class="text-sm font-bold" id="aiSystemStatus">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Spike Detections & Agent Decisions -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Recent Spike Detections -->
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">⚡ Recent Spike Detections</h3>
+                <div class="overflow-y-auto max-h-96">
+                    <div id="spikeDetectionsList" class="space-y-2">
+                        <div class="text-center text-gray-500 text-sm py-8">Loading spike detections...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Agent Decisions -->
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">🧠 Recent Agent Decisions</h3>
+                <div class="overflow-y-auto max-h-96">
+                    <div id="agentDecisionsList" class="space-y-2">
+                        <div class="text-center text-gray-500 text-sm py-8">Loading agent decisions...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Agent System Logs -->
+        <div class="card mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold">📋 AI Agent System Logs</h3>
+                <div class="flex items-center space-x-2">
+                    <select id="logLevelFilter" class="border border-gray-300 rounded px-2 py-1 text-sm">
+                        <option value="all">All Levels</option>
+                        <option value="info">Info</option>
+                        <option value="warning">Warning</option>
+                        <option value="error">Error</option>
+                    </select>
+                    <button id="refreshLogsBtn" class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm">
+                        🔄 Refresh
+                    </button>
+                    <button id="clearLogsBtn" class="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 text-sm">
+                        🗑️ Clear
+                    </button>
+                </div>
+            </div>
+            <div class="overflow-y-auto max-h-96 bg-gray-900 rounded-lg p-4 font-mono text-xs">
+                <div id="agentLogsList" class="space-y-1">
+                    <div class="text-gray-400 text-center py-8">Loading AI agent logs...</div>
+                </div>
+            </div>
+            <div class="mt-2 text-xs text-gray-500 flex justify-between items-center">
+                <span id="logCount">0 log entries</span>
+                <span class="text-gray-400">Auto-refreshes every 10 seconds</span>
+            </div>
+        </div>
+
         <!-- RL Bot Live Status -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
             <div class="card">

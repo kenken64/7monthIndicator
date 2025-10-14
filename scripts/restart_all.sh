@@ -32,10 +32,66 @@ print_header() {
     echo ""
 }
 
+# Log rotation function
+rotate_logs() {
+    print_info "🔄 Rotating logs before restart..."
+    
+    # Define log directories and files to rotate
+    local log_paths=(
+        "$PROJECT_ROOT/logs"
+        "$PROJECT_ROOT"
+        "$PROJECT_ROOT/services/trading"
+        "$PROJECT_ROOT/services/chart-analysis"
+        "$PROJECT_ROOT/services/mcp-server"
+    )
+    
+    # Create rotated logs directory if it doesn't exist
+    mkdir -p "$PROJECT_ROOT/logs/rotated"
+    
+    local timestamp=$(date '+%Y%m%d_%H%M%S')
+    local rotated_count=0
+    
+    # Find and rotate log files larger than 1MB
+    for log_dir in "${log_paths[@]}"; do
+        if [ -d "$log_dir" ]; then
+            # Find .log files larger than 1MB (1048576 bytes)
+            find "$log_dir" -maxdepth 1 -name "*.log" -size +1M -type f | while read -r logfile; do
+                if [ -f "$logfile" ]; then
+                    local filename=$(basename "$logfile")
+                    local dirname=$(dirname "$logfile")
+                    local rotated_name="${filename%.log}_${timestamp}.log"
+                    
+                    # Move the log file to rotated directory
+                    mv "$logfile" "$PROJECT_ROOT/logs/rotated/$rotated_name"
+                    
+                    # Create a new empty log file with same permissions
+                    touch "$logfile"
+                    chmod 644 "$logfile"
+                    
+                    print_status "📦 Rotated: $filename → rotated/$rotated_name"
+                    rotated_count=$((rotated_count + 1))
+                fi
+            done
+        fi
+    done
+    
+    # Clean up old rotated logs (keep only last 10 rotations per log type)
+    find "$PROJECT_ROOT/logs/rotated" -name "*.log" -type f -mtime +7 -delete 2>/dev/null
+    
+    if [ $rotated_count -eq 0 ]; then
+        print_info "📝 No logs required rotation (all < 1MB)"
+    else
+        print_status "✅ Rotated $rotated_count log files"
+    fi
+}
+
 print_header
 
 # Set global environment
 export PROJECT_ROOT="$PROJECT_ROOT"
+
+# Rotate logs before stopping services
+rotate_logs
 
 # Service definitions: name:description
 services=(

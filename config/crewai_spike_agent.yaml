@@ -1,0 +1,400 @@
+# CrewAI Market Spike Agent Configuration
+# Enhanced with Circuit Breaker Protection System
+
+# ========================================
+# CIRCUIT BREAKER CONFIGURATION (TOP PRIORITY)
+# ========================================
+circuit_breaker:
+  enabled: true  # Master switch for circuit breaker
+
+  # Crash detection thresholds
+  thresholds:
+    btc:
+      dump_1h_percent: 15.0  # BTC drops >15% in 1 hour triggers circuit breaker
+      dump_4h_percent: 20.0  # BTC drops >20% in 4 hours
+      flash_crash_5m_percent: 10.0  # BTC drops >10% in 5 minutes (flash crash)
+    eth:
+      dump_1h_percent: 15.0  # ETH drops >15% in 1 hour
+      dump_4h_percent: 25.0  # ETH drops >25% in 4 hours
+      flash_crash_5m_percent: 12.0  # ETH drops >12% in 5 minutes
+    market_wide:
+      total_mcap_4h_percent: 20.0  # Total market cap drops >20% in 4 hours
+      top10_simultaneous_percent: 15.0  # Top 10 coins all down >15% simultaneously
+    binance_specific:
+      liquidations_1h_usd: 500000000  # $500M in liquidations in 1 hour
+      funding_rate_extreme: 1.0  # 1% per 8h funding rate (extreme leverage)
+      volume_drop_percent: 80.0  # Trading volume drops >80% (exchange issue)
+
+  # What to do when circuit breaker triggers
+  actions:
+    cancel_all_orders: true  # Cancel ALL pending orders immediately
+    pause_all_strategies: true  # Pause ALL trading strategies
+    close_all_positions: false  # Conservative: true, Aggressive: false
+    set_tight_stops: true  # If not closing positions, set tight stops
+    notify_channels: ["telegram", "app", "email"]  # Alert channels
+    log_crash_event: true  # Log full market snapshot
+    disable_spike_trading: true  # Disable spike agent during crashes
+
+  # Recovery conditions (when to resume trading)
+  recovery:
+    auto_resume: true  # Auto-resume when conditions normalize
+    stabilization_minutes: 30  # Market must be stable for 30 minutes
+    max_drop_during_recovery: 5.0  # No >5% drops during recovery period
+    min_volume_recovery_percent: 70  # Volume returns to >70% of average
+    require_btc_50pct_recovery: true  # BTC must recover 50% of initial drop
+    manual_override_allowed: true  # User can manually resume earlier
+
+  # Monitoring settings
+  monitoring:
+    check_interval_ms: 1000  # Check every 1 second
+    data_sources: ["binance", "coingecko"]  # Multi-source validation
+    require_confirmation: true  # Require confirmation from 2+ sources
+    stabilization_check_ms: 10000  # 10-second confirmation before trigger
+
+# ========================================
+# SPIKE DETECTION CONFIGURATION
+# ========================================
+spike_detection:
+  enabled: true  # Master switch for spike detection
+  check_circuit_breaker: true  # Don't trade spikes during crashes (CRITICAL!)
+
+  binance:
+    # Trading pairs to monitor
+    spot_pairs:
+      - "BTCUSDT"
+      - "ETHUSDT"
+      - "BNBUSDT"
+      - "SOLUSDT"
+      - "SUIUSDC"
+      - "ADAUSDT"
+      - "DOTUSDT"
+      - "LINKUSDT"
+
+    futures_pairs:
+      - "BTCUSDT"
+      - "ETHUSDT"
+      - "SUIUSDC"
+
+    # WebSocket streams to monitor
+    websocket_streams:
+      - "!miniTicker@arr"  # All market mini-ticker
+      - "@depth20@100ms"  # Order book depth (20 levels, 100ms updates)
+      - "@aggTrade"  # Aggregated trades
+
+    monitor_liquidations: true  # Track futures liquidations
+    monitor_funding_rates: true  # Track funding rates for sentiment
+
+  # Spike thresholds (default for all pairs)
+  thresholds:
+    default:
+      price_change_percent: 5.0  # >5% price change
+      timeframe_minutes: 5  # In 5 minutes
+      volume_multiplier: 2.0  # Volume must be 2x average
+      min_liquidity_usd: 100000  # Minimum $100k liquidity
+      confidence_threshold: 0.7  # 70% confidence minimum
+
+    # Per-pair overrides (Binance specific)
+    BTCUSDT:
+      price_change_percent: 3.0  # BTC less volatile, lower threshold
+      timeframe_minutes: 5
+      volume_multiplier: 1.5
+    ETHUSDT:
+      price_change_percent: 4.0
+      timeframe_minutes: 5
+      volume_multiplier: 1.8
+    SOLUSDT:
+      price_change_percent: 10.0  # SOL more volatile, higher threshold
+      timeframe_minutes: 5
+      volume_multiplier: 3.0
+    SUIUSDC:
+      price_change_percent: 8.0  # SUI very volatile
+      timeframe_minutes: 5
+      volume_multiplier: 2.5
+
+  # Spike type detection
+  spike_types:
+    - type: "price_spike"  # Rapid price movement
+      enabled: true
+    - type: "volume_explosion"  # Volume surge
+      enabled: true
+    - type: "futures_spot_divergence"  # Futures/spot price gap
+      enabled: true
+    - type: "order_book_imbalance"  # Bid/ask imbalance
+      enabled: true
+    - type: "liquidation_cascade"  # Liquidation events
+      enabled: true
+
+  # Filters to avoid bad trades
+  filters:
+    max_spread_percent: 2.0  # Skip if spread >2%
+    blacklisted_tokens: []  # Tokens to never trade
+    min_24h_volume_usd: 10000000  # Minimum $10M 24h volume
+    max_concurrent_spikes: 3  # Don't trade more than 3 spikes at once
+    cooldown_minutes: 15  # Wait 15 min between same-pair spikes
+
+# ========================================
+# RISK MANAGEMENT CONFIGURATION
+# ========================================
+risk_management:
+  # Position sizing
+  max_position_size_percent: 5.0  # Maximum 5% of portfolio per spike trade
+  max_concurrent_spikes: 3  # Maximum 3 spike positions open
+
+  # Loss limits
+  daily_loss_limit_percent: 10.0  # Stop trading if lose 10% in a day
+  per_trade_max_loss: 2.0  # Maximum 2% loss per trade
+
+  # During/after circuit breaker activation
+  reduce_size_after_circuit_breaker: true  # 50% position size for 1 hour after CB
+  increase_stops_after_crash: true  # Tighter stops after crash
+  post_crash_cautious_hours: 1  # Extra cautious for 1 hour post-crash
+
+  # Exit parameters
+  stop_loss_percent: 2.0  # 2% stop loss
+  take_profit_percent: 8.0  # 8% take profit target
+  max_slippage_percent: 1.0  # Maximum 1% slippage allowed
+  trailing_stop_enabled: true  # Use trailing stops
+  trailing_stop_distance: 1.5  # 1.5% trailing stop distance
+
+  # Market regime based adjustments
+  market_regime_adjustments:
+    risk_off:
+      position_size_multiplier: 0.5  # 50% smaller positions
+      skip_trading: true  # Don't trade during risk-off
+    high_volatility:
+      position_size_multiplier: 0.7  # 70% smaller positions
+      wider_stops: true  # Use wider stops in volatile markets
+
+# ========================================
+# EXECUTION CONFIGURATION
+# ========================================
+execution:
+  mode: "auto"  # auto, semi-auto, alert-only
+
+  binance:
+    order_type: "market"  # market, limit, post_only
+    time_in_force: "GTC"  # GTC (Good Till Cancel), IOC, FOK
+    use_futures: false  # Trade on futures market (default: spot)
+    leverage: 1  # Leverage if using futures (1-125x)
+    margin_type: "CROSS"  # CROSS or ISOLATED
+
+  retry:
+    max_attempts: 3  # Retry failed orders 3 times
+    delay_seconds: 1  # Wait 1 second between retries
+    exponential_backoff: true  # Exponential backoff on retries
+
+  respect_circuit_breaker: true  # CRITICAL: Don't execute if CB triggered
+
+# ========================================
+# AGENT CONFIGURATION
+# ========================================
+agents:
+  # Market Guardian Agent (Circuit Breaker) - HIGHEST PRIORITY
+  market_guardian:
+    enabled: true
+    priority: "highest"  # Pre-empts all other agents
+    monitoring_interval_ms: 1000  # Check every 1 second
+    llm_model: "gpt-4o-mini"  # Fast, cost-effective model
+    temperature: 0.1  # Low temperature for consistent decisions
+    role: "Market Crash Protection Specialist"
+    goal: "Monitor market-wide conditions and immediately halt all bot trading when systemic crashes are detected"
+    backstory: "A battle-tested risk manager who survived the 2021 and 2022 crypto crashes, now dedicated to protecting capital during black swan events"
+    tools:
+      - "BinanceMarketDataTool"
+      - "MarketCapMonitorTool"
+      - "LiquidationTrackerTool"
+      - "BotControlTool"
+      - "EmergencyAlertTool"
+      - "MarketRecoveryAnalyzerTool"
+
+  # Market Scanner Agent
+  market_scanner:
+    enabled: true
+    priority: "high"
+    check_circuit_breaker: true  # Check CB before processing spikes
+    llm_model: "gpt-4o-mini"
+    temperature: 0.2
+    role: "Binance Market Surveillance Specialist"
+    goal: "Detect anomalous price movements across all monitored Binance trading pairs in real-time"
+    backstory: "A vigilant market watcher who never sleeps, trained on millions of Binance price patterns"
+    tools:
+      - "BinanceWebSocketTool"
+      - "BinanceOrderBookTool"
+      - "StatisticalAnalysisTool"
+      - "TimeSeriesAnalyzerTool"
+      - "CircuitBreakerStatusTool"
+
+  # Context Analyzer Agent
+  context_analyzer:
+    enabled: true
+    priority: "medium"
+    llm_model: "gpt-4o-mini"
+    temperature: 0.3
+    role: "Crypto Intelligence Analyst"
+    goal: "Provide comprehensive context for market spikes on Binance to distinguish legitimate opportunities from manipulation"
+    backstory: "A seasoned crypto analyst who has witnessed countless pumps, dumps, and manipulations across all market cycles"
+    tools:
+      - "NewsSentimentTool"
+      - "OnChainDataTool"
+      - "CorrelationAnalysisTool"
+      - "ManipulationDetectorTool"
+      - "BinanceSpotVsFuturesTool"
+
+  # Risk Assessment Agent
+  risk_assessment:
+    enabled: true
+    priority: "high"
+    check_circuit_breaker: true  # Verify CB status before approving trades
+    llm_model: "gpt-4o-mini"
+    temperature: 0.1  # Very conservative
+    role: "Crypto Risk Manager"
+    goal: "Evaluate risk-reward profile and determine position sizing for spike opportunities while ensuring circuit breaker isn't triggered"
+    backstory: "A disciplined risk manager with 10+ years in crypto trading, known for protecting capital during crashes"
+    tools:
+      - "PortfolioAnalyzerTool"
+      - "BinanceSlippageCalculatorTool"
+      - "RiskMetricsCalculatorTool"
+      - "PositionSizingOptimizerTool"
+      - "MarketStabilityCheckerTool"
+      - "CircuitBreakerStatusTool"
+
+  # Strategy Executor Agent
+  strategy_executor:
+    enabled: true
+    priority: "medium"
+    check_circuit_breaker: true  # CRITICAL: Don't execute if CB active
+    llm_model: "gpt-4o-mini"
+    temperature: 0.1
+    role: "Binance Trade Execution Specialist"
+    goal: "Execute optimal entry/exit strategies for approved spike opportunities on Binance"
+    backstory: "A precise execution specialist who ensures every trade is placed with perfect timing and minimal slippage"
+    tools:
+      - "BinanceOrderExecutionTool"
+      - "OrderRoutingOptimizerTool"
+      - "PositionMonitoringTool"
+      - "ExecutionQualityAnalyzerTool"
+      - "CircuitBreakerStatusTool"
+
+# ========================================
+# CREW CONFIGURATION
+# ========================================
+crews:
+  # Guardian Crew - Runs continuously in parallel
+  guardian_crew:
+    name: "Market Guardian Crew"
+    type: "continuous"  # Runs 24/7
+    process: "sequential"
+    agents:
+      - "market_guardian"
+    tasks:
+      - "market_monitoring_task"
+    memory: true
+    verbose: true
+    max_rpm: 100  # Rate limiting
+
+  # Spike Trading Crew - Event-driven
+  spike_trading_crew:
+    name: "Spike Trading Crew"
+    type: "event_driven"  # Starts when spike detected
+    process: "sequential"  # Tasks run in order
+    agents:
+      - "market_scanner"
+      - "context_analyzer"
+      - "risk_assessment"
+      - "strategy_executor"
+    tasks:
+      - "spike_detection_task"
+      - "stability_check_task"
+      - "context_analysis_task"
+      - "risk_evaluation_task"
+      - "execution_task"
+    memory: true
+    verbose: true
+    max_rpm: 100
+    shared_state: true  # Share circuit breaker state with guardian
+
+# ========================================
+# LLM PROVIDER CONFIGURATION
+# ========================================
+llm:
+  provider: "openai"  # openai, anthropic, local
+  model: "gpt-4o-mini"  # Cost-effective model
+  api_key_env: "OPENAI_API_KEY"
+  temperature: 0.2
+  max_tokens: 1000
+  fallback_to_rules: true  # Use rule-based logic if LLM fails
+  cost_limit_daily_usd: 5.0  # Stop if costs exceed $5/day
+
+# ========================================
+# NOTIFICATION CONFIGURATION
+# ========================================
+notifications:
+  telegram:
+    enabled: true
+    token_env: "TELEGRAM_TOKEN"
+    chat_id_env: "TELEGRAM_CHAT_ID"
+    priority_levels:
+      - "CRITICAL"  # Circuit breaker activations
+      - "HIGH"  # Spike trades executed
+      - "WARNING"  # Market approaching CB threshold
+
+  email:
+    enabled: false  # Set to true if email configured
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+
+  app:
+    enabled: true  # Web dashboard notifications
+    webhook_url: "http://localhost:5000/api/notifications"
+
+# ========================================
+# DATABASE CONFIGURATION
+# ========================================
+database:
+  path: "data/trading_bot.db"
+  tables:
+    - "circuit_breaker_events"  # CB activations/recoveries
+    - "spike_detections"  # All detected spikes
+    - "spike_trades"  # Executed spike trades
+    - "agent_decisions"  # Agent reasoning and decisions
+    - "market_crashes"  # Historical crash data
+  retention_days: 90  # Keep data for 90 days
+  backup_enabled: true
+  backup_interval_hours: 24
+
+# ========================================
+# LOGGING CONFIGURATION
+# ========================================
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/crewai_spike_agent.log"
+  max_size_mb: 50
+  backup_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # Special logs
+  circuit_breaker_log: "logs/circuit_breaker.log"  # Dedicated CB log
+  spike_detection_log: "logs/spike_detection.log"
+  agent_decisions_log: "logs/agent_decisions.log"
+
+# ========================================
+# PERFORMANCE CONFIGURATION
+# ========================================
+performance:
+  max_memory_mb: 500  # Maximum memory usage
+  cpu_cores: 2  # Number of CPU cores to use
+  cache_enabled: true
+  cache_ttl_seconds: 300  # 5-minute cache
+
+  # Circuit breaker performance
+  guardian_dedicated_core: true  # Dedicated CPU for guardian
+  guardian_priority: "highest"  # OS priority
+
+# ========================================
+# TESTING & VALIDATION
+# ========================================
+testing:
+  dry_run_mode: false  # Set to true for paper trading
+  simulate_circuit_breaker: false  # Test CB without real crash
+  log_all_decisions: true  # Log every decision for analysis
+  backtest_mode: false  # Historical data replay

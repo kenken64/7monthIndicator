@@ -15,29 +15,34 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeCharts();
     loadSystemStats();
     loadDashboardData();
-    
+    loadCrewAIData(); // Load AI agent data
+
     // Set up event listeners
     document.getElementById('refreshBtn').addEventListener('click', refreshDashboard);
     document.getElementById('symbolSelect').addEventListener('change', handleSymbolChange);
     document.getElementById('timeRange').addEventListener('change', handleTimeRangeChange);
     document.getElementById('logsBtn').addEventListener('click', handleLogsClick);
     document.getElementById('pauseBtn').addEventListener('click', handlePauseClick);
-    
+
     // Load pause status on startup
     loadPauseStatus();
-    
+
     // Auto-refresh every 30 seconds
     setInterval(refreshDashboard, 30000);
     setInterval(loadPauseStatus, 10000); // Check pause status more frequently
-    
+    setInterval(loadCrewAIData, 30000); // Refresh CrewAI data every 30 seconds
+
     // Load chart analysis data
     loadChartAnalysis();
-    
+
     // Load market context data
     loadMarketContext();
-    
+
     // Auto-refresh market context every 5 minutes
     setInterval(loadMarketContext, 300000);
+
+    // Set up AI agent logging
+    setupAgentLogsEventListeners();
 });
 
 function initializeCharts() {
@@ -728,30 +733,105 @@ async function loadOpenPositions() {
     try {
         const response = await fetch(`/api/open-positions/${currentSymbol}`);
         const data = await response.json();
-        
+
         const container = document.getElementById('openPositions');
-        
-        if (data.success && data.data.database_positions && data.data.database_positions.length > 0) {
-            const positions = data.data.database_positions;
-            container.innerHTML = positions.map(trade => `
-                <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <div>
-                        <span class="font-semibold ${trade.side === 'BUY' ? 'text-green-600' : 'text-red-600'}">
-                            ${trade.side}
-                        </span>
-                        <span class="text-gray-600">${trade.quantity.toFixed(4)}</span>
-                    </div>
-                    <div class="text-right">
-                        <div class="font-semibold">$${trade.entry_price.toFixed(4)}</div>
-                        <div class="text-xs text-gray-500">${formatDateTime(trade.timestamp)}</div>
-                    </div>
-                </div>
-            `).join('');
+
+        if (data.success && data.data) {
+            // Combine both database and live positions
+            const allPositions = [];
+
+            // Add database positions
+            if (data.data.database_positions && data.data.database_positions.length > 0) {
+                allPositions.push(...data.data.database_positions.map(trade => ({
+                    side: trade.side,
+                    size: trade.quantity,
+                    entry_price: trade.entry_price,
+                    timestamp: trade.timestamp,
+                    source: 'database'
+                })));
+            }
+
+            // Add live Binance positions
+            if (data.data.live_positions && data.data.live_positions.length > 0) {
+                allPositions.push(...data.data.live_positions.map(pos => ({
+                    side: pos.side,
+                    size: pos.size,
+                    entry_price: pos.entry_price,
+                    mark_price: pos.mark_price,
+                    unrealized_pnl: pos.unrealized_pnl,
+                    percentage: pos.percentage,
+                    liquidation_price: pos.liquidation_price,
+                    source: 'binance_live'
+                })));
+            }
+
+            if (allPositions.length > 0) {
+                container.innerHTML = allPositions.map(pos => {
+                    const sideColor = pos.side === 'LONG' || pos.side === 'BUY' ? 'text-green-600' : 'text-red-600';
+                    const pnlColor = pos.unrealized_pnl && pos.unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600';
+
+                    if (pos.source === 'binance_live') {
+                        // Display live position with PnL
+                        return `
+                            <div class="p-3 bg-gradient-to-r from-blue-50 to-blue-100 rounded border-l-4 border-blue-500">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="font-semibold ${sideColor} text-lg">${pos.side}</span>
+                                    <span class="text-xs bg-blue-500 text-white px-2 py-1 rounded">LIVE</span>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 text-sm">
+                                    <div>
+                                        <span class="text-gray-600">Size:</span>
+                                        <span class="font-semibold ml-1">${pos.size.toFixed(4)}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600">Entry:</span>
+                                        <span class="font-semibold ml-1">$${pos.entry_price.toFixed(4)}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600">Mark:</span>
+                                        <span class="font-semibold ml-1">$${pos.mark_price.toFixed(4)}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600">PnL:</span>
+                                        <span class="font-semibold ml-1 ${pnlColor}">$${pos.unrealized_pnl.toFixed(2)} (${pos.percentage.toFixed(2)}%)</span>
+                                    </div>
+                                    ${pos.liquidation_price > 0 ? `
+                                    <div class="col-span-2">
+                                        <span class="text-gray-600">Liquidation:</span>
+                                        <span class="font-semibold ml-1 text-red-600">$${pos.liquidation_price.toFixed(4)}</span>
+                                    </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        // Display database position
+                        return `
+                            <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
+                                <div>
+                                    <span class="font-semibold ${sideColor}">
+                                        ${pos.side}
+                                    </span>
+                                    <span class="text-gray-600 ml-2">${pos.size.toFixed(4)}</span>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-semibold">$${pos.entry_price.toFixed(4)}</div>
+                                    <div class="text-xs text-gray-500">${formatDateTime(pos.timestamp)}</div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                }).join('');
+            } else {
+                container.innerHTML = '<div class="text-center text-gray-500">No open positions</div>';
+            }
         } else {
             container.innerHTML = '<div class="text-center text-gray-500">No open positions</div>';
         }
     } catch (error) {
         console.error('Error loading open positions:', error);
+        document.getElementById('openPositions').innerHTML =
+            '<div class="text-center text-red-500">Error loading positions</div>';
     }
 }
 
@@ -1351,3 +1431,280 @@ function capitalizeFirst(str) {
     if (!str) return str;
     return str.charAt(0).toUpperCase() + str.slice(1);
 }
+
+// ============================================================================
+// CrewAI Multi-Agent System Functions
+// ============================================================================
+
+async function loadCrewAIData() {
+    await Promise.all([
+        loadCircuitBreakerStatus(),
+        loadAgentStatus(),
+        loadCrewAIStatistics(),
+        loadSpikeDetections(),
+        loadAgentDecisions()
+    ]);
+}
+
+async function loadCircuitBreakerStatus() {
+    try {
+        const response = await fetch('/api/crewai/circuit-breaker-status');
+        const data = await response.json();
+
+        if (data.success && data.data) {
+            const cb = data.data;
+
+            // Update badge
+            const badge = document.getElementById('circuitBreakerBadge');
+            if (cb.is_safe) {
+                badge.textContent = '✅ SAFE';
+                badge.className = 'text-xs font-bold px-3 py-1 rounded bg-green-100 text-green-800';
+            } else {
+                badge.textContent = '🚨 TRIGGERED';
+                badge.className = 'text-xs font-bold px-3 py-1 rounded bg-red-100 text-red-800';
+            }
+
+            // Update state
+            document.getElementById('circuitBreakerState').textContent = cb.state || '-';
+
+            // Update last check
+            document.getElementById('circuitBreakerLastCheck').textContent =
+                cb.last_check_time ? formatTime(cb.last_check_time) : 'Never';
+
+            // Update reason
+            document.getElementById('circuitBreakerReason').textContent =
+                cb.trigger_reason || 'None';
+        }
+    } catch (error) {
+        console.error('Error loading circuit breaker status:', error);
+    }
+}
+
+async function loadAgentStatus() {
+    try {
+        const response = await fetch('/api/crewai/agent-status');
+        const data = await response.json();
+
+        if (data.success && data.data) {
+            const agents = data.data.agents;
+
+            // Update each agent
+            updateAgentCard('market_guardian', agents.market_guardian);
+            updateAgentCard('market_scanner', agents.market_scanner);
+            updateAgentCard('context_analyzer', agents.context_analyzer);
+            updateAgentCard('risk_assessment', agents.risk_assessment);
+            updateAgentCard('strategy_executor', agents.strategy_executor);
+        }
+    } catch (error) {
+        console.error('Error loading agent status:', error);
+    }
+}
+
+function updateAgentCard(agentKey, agentData) {
+    const statusEl = document.getElementById(`agent${capitalizeAgentName(agentKey)}`);
+    const activityEl = document.getElementById(`agent${capitalizeAgentName(agentKey)}Activity`);
+
+    if (agentData) {
+        const decisions24h = agentData.decisions_24h || 0;
+
+        statusEl.textContent = decisions24h > 0 ? '🟢 Active' : '⚪ Idle';
+        activityEl.textContent = `${decisions24h} decisions (24h)`;
+    }
+}
+
+function capitalizeAgentName(name) {
+    return name.split('_').map(word =>
+        word.charAt(0).toUpperCase() + word.slice(1)
+    ).join('');
+}
+
+async function loadCrewAIStatistics() {
+    try {
+        const response = await fetch('/api/crewai/statistics');
+        const data = await response.json();
+
+        if (data.success && data.data) {
+            const stats = data.data;
+
+            document.getElementById('spikesDetected').textContent = stats.spikes_detected || 0;
+            document.getElementById('agentDecisions').textContent = stats.agent_decisions_made || 0;
+            document.getElementById('cbTriggers').textContent = stats.circuit_breaker_triggers || 0;
+
+            const systemStatus = stats.agent_system_active ? '🟢 Active' : '⚪ Idle';
+            document.getElementById('aiSystemStatus').textContent = systemStatus;
+        }
+    } catch (error) {
+        console.error('Error loading CrewAI statistics:', error);
+    }
+}
+
+async function loadSpikeDetections() {
+    try {
+        const response = await fetch('/api/crewai/spike-detections?limit=10&hours=24');
+        const data = await response.json();
+
+        const container = document.getElementById('spikeDetectionsList');
+
+        if (data.success && data.data && data.data.length > 0) {
+            container.innerHTML = data.data.map(spike => {
+                const directionClass = spike.direction === 'UP' ? 'text-green-600' : 'text-red-600';
+                const directionIcon = spike.direction === 'UP' ? '📈' : '📉';
+
+                return `
+                    <div class="bg-gray-50 p-3 rounded border-l-4 ${spike.direction === 'UP' ? 'border-green-500' : 'border-red-500'}">
+                        <div class="flex justify-between items-start mb-1">
+                            <span class="font-semibold ${directionClass}">${directionIcon} ${spike.symbol}</span>
+                            <span class="text-xs text-gray-500">${formatTime(spike.timestamp)}</span>
+                        </div>
+                        <div class="text-sm">
+                            <span class="font-bold">${spike.magnitude}%</span> ${spike.direction}
+                        </div>
+                        <div class="text-xs text-gray-600 mt-1">
+                            ${spike.price_start} → ${spike.price_end}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            container.innerHTML = '<div class="text-center text-gray-500 text-sm py-8">No spike detections in the last 24 hours</div>';
+        }
+    } catch (error) {
+        console.error('Error loading spike detections:', error);
+        document.getElementById('spikeDetectionsList').innerHTML =
+            '<div class="text-center text-red-500 text-sm py-8">Error loading spike detections</div>';
+    }
+}
+
+async function loadAgentDecisions() {
+    try {
+        const response = await fetch('/api/crewai/agent-decisions?limit=10&hours=24');
+        const data = await response.json();
+
+        const container = document.getElementById('agentDecisionsList');
+
+        if (data.success && data.data && data.data.length > 0) {
+            container.innerHTML = data.data.map(decision => {
+                return `
+                    <div class="bg-gray-50 p-3 rounded border-l-4 border-blue-500">
+                        <div class="flex justify-between items-start mb-1">
+                            <span class="font-semibold text-blue-600">🤖 ${decision.agent_name}</span>
+                            <span class="text-xs text-gray-500">${formatTime(decision.timestamp)}</span>
+                        </div>
+                        <div class="text-sm font-semibold">${decision.decision_type}</div>
+                        <div class="text-xs text-gray-700 mt-1">${decision.reasoning}</div>
+                        ${decision.action_taken ? `
+                            <div class="text-xs text-gray-600 mt-1">
+                                <span class="font-semibold">Action:</span> ${decision.action_taken}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        } else {
+            container.innerHTML = '<div class="text-center text-gray-500 text-sm py-8">No agent decisions in the last 24 hours</div>';
+        }
+    } catch (error) {
+        console.error('Error loading agent decisions:', error);
+        document.getElementById('agentDecisionsList').innerHTML =
+            '<div class="text-center text-red-500 text-sm py-8">Error loading agent decisions</div>';
+    }
+}
+
+// ============================================================================
+// AI Agent Logging Functions
+// ============================================================================
+
+let agentLogsAutoRefreshInterval = null;
+let currentLogLevel = 'all';
+
+async function loadAIAgentLogs() {
+    try {
+        const response = await fetch(`/api/logs/ai-agents?lines=100&level=${currentLogLevel}`);
+        const data = await response.json();
+
+        const container = document.getElementById('agentLogsList');
+        const logCount = document.getElementById('logCount');
+
+        if (data.success && data.data && data.data.length > 0) {
+            container.innerHTML = data.data.map(log => {
+                // Determine log color based on level
+                let logColor = 'text-gray-300';
+                if (log.level === 'error') {
+                    logColor = 'text-red-400';
+                } else if (log.level === 'warning') {
+                    logColor = 'text-yellow-400';
+                } else if (log.level === 'info') {
+                    logColor = 'text-green-400';
+                }
+
+                // Format timestamp
+                const timeStr = log.timestamp || '';
+
+                return `
+                    <div class="${logColor} font-mono text-xs">
+                        ${timeStr ? `<span class="text-gray-500">[${timeStr}]</span> ` : ''}${escapeHtml(log.content)}
+                    </div>
+                `;
+            }).join('');
+
+            logCount.textContent = `${data.total} log entries`;
+        } else {
+            container.innerHTML = '<div class="text-gray-400 text-center py-8">No AI agent logs found</div>';
+            logCount.textContent = '0 log entries';
+        }
+    } catch (error) {
+        console.error('Error loading AI agent logs:', error);
+        document.getElementById('agentLogsList').innerHTML =
+            '<div class="text-red-400 text-center py-8">Error loading AI agent logs</div>';
+    }
+}
+
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+function clearAgentLogs() {
+    const container = document.getElementById('agentLogsList');
+    container.innerHTML = '<div class="text-gray-400 text-center py-8">Logs cleared. Click Refresh to reload.</div>';
+    document.getElementById('logCount').textContent = '0 log entries';
+}
+
+function setupAgentLogsEventListeners() {
+    // Log level filter
+    const logLevelFilter = document.getElementById('logLevelFilter');
+    if (logLevelFilter) {
+        logLevelFilter.addEventListener('change', function(e) {
+            currentLogLevel = e.target.value;
+            loadAIAgentLogs();
+        });
+    }
+
+    // Refresh button
+    const refreshLogsBtn = document.getElementById('refreshLogsBtn');
+    if (refreshLogsBtn) {
+        refreshLogsBtn.addEventListener('click', loadAIAgentLogs);
+    }
+
+    // Clear button
+    const clearLogsBtn = document.getElementById('clearLogsBtn');
+    if (clearLogsBtn) {
+        clearLogsBtn.addEventListener('click', clearAgentLogs);
+    }
+
+    // Start auto-refresh (every 10 seconds)
+    if (agentLogsAutoRefreshInterval) {
+        clearInterval(agentLogsAutoRefreshInterval);
+    }
+    agentLogsAutoRefreshInterval = setInterval(loadAIAgentLogs, 10000);
+
+    // Initial load
+    loadAIAgentLogs();
+}
+

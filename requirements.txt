@@ -7,3 +7,9 @@ matplotlib>=3.8.0
 seaborn>=0.13.0
 flask>=3.0.0
 newsapi-python
+crewai>=0.203.0
+crewai-tools>=0.76.0
+langchain>=0.3.27
+langchain-openai>=0.3.35
+langchain-community>=0.3.31
+pyyaml>=6.0.0

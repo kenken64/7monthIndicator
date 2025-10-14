@@ -30,6 +30,19 @@ log_info "🚀 Starting Trading Bot System Daemon..."
 export PROJECT_ROOT="$PROJECT_ROOT"
 cd "$PROJECT_ROOT"
 
+# Rotate logs before starting services (if rotation script exists)
+if [ -f "scripts/rotate_logs.sh" ]; then
+    log_info "🔄 Performing log rotation with compression before service start..."
+    ./scripts/rotate_logs.sh rotate 1M 7 true
+    if [ $? -eq 0 ]; then
+        log_success "✅ Log rotation with compression completed"
+    else
+        log_error "❌ Log rotation failed, continuing anyway..."
+    fi
+else
+    log_info "📝 Log rotation script not found, skipping rotation"
+fi
+
 # Service definitions: script_name:description
 services=(
     "start_rl_bot.sh:🤖 RL Trading Bot"
