@@ -31,6 +31,16 @@ except ImportError as e:
     RL_ENHANCEMENT_ENABLED = False
     print(f"⚠️ RL Enhancement: NOT AVAILABLE - {e}")
 
+# Import unified signal aggregator
+try:
+    from unified_signal_aggregator import create_aggregator
+    from signal_data_collector import SignalDataCollector
+    UNIFIED_SIGNALS_ENABLED = True
+    print("📊 Unified Signal Aggregator: ACTIVATED")
+except ImportError as e:
+    UNIFIED_SIGNALS_ENABLED = False
+    print(f"⚠️ Unified Signal Aggregator: NOT AVAILABLE - {e}")
+
 # Import database module
 from database import get_database
 
@@ -315,7 +325,20 @@ class RLEnhancedBinanceFuturesBot:
         
         # Telegram notifications - Real-time alerts for trading activity
         self.telegram = TelegramNotifier()
-        
+
+        # Unified Signal Aggregator - Combines all signal sources
+        self.unified_aggregator = None
+        self.signal_collector = None
+        if UNIFIED_SIGNALS_ENABLED:
+            try:
+                self.unified_aggregator = create_aggregator()
+                self.signal_collector = SignalDataCollector()
+                self.signal_collector.start_collection()
+                logger.info("📊 Unified Signal Aggregator initialized and data collection started")
+            except Exception as e:
+                logger.error(f"❌ Failed to initialize Unified Signal Aggregator: {e}")
+                UNIFIED_SIGNALS_ENABLED = False
+
         logger.info(f"🤖 RL-Enhanced Bot initialized for {symbol}")
         logger.info(f"🛡️ SAFETY SETTINGS: {position_percentage}% position size (vs 51% original)")
         logger.info(f"🎯 Risk Management: {self.take_profit_percent}% TP, {self.stop_loss_percent}% SL")
@@ -331,6 +354,7 @@ class RLEnhancedBinanceFuturesBot:
             logger.error(f"⚠️ Startup reconciliation failed: {e}")
         
         # Send startup notification to Telegram
+        unified_status = "ACTIVE" if (UNIFIED_SIGNALS_ENABLED and self.unified_aggregator) else "DISABLED"
         startup_message = f"""<b>🤖 RL Trading Bot Started</b>
 
 📊 Symbol: {symbol}
@@ -338,6 +362,15 @@ class RLEnhancedBinanceFuturesBot:
 ⚡ Leverage: {leverage}x
 🎯 TP: {self.take_profit_percent}% | SL: {self.stop_loss_percent}%
 🤖 RL Enhancement: {'ACTIVE' if RL_ENHANCEMENT_ENABLED else 'DISABLED'}
+📊 Unified Signals: {unified_status}
+
+Signal Sources:
+  • Layer 1: Technical Indicators (RSI, MACD, VWAP, EMA)
+  • Layer 2: RL Enhancement
+  • Chart Analysis (GPT-4 Vision)
+  • CrewAI Multi-Agent
+  • Market Context & Cross-Asset
+  • News Sentiment
 
 ✅ Bot is now monitoring signals...
 ⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"""
@@ -422,28 +455,29 @@ class RLEnhancedBinanceFuturesBot:
         return indicators
     
     def generate_signals(self, df: pd.DataFrame, indicators: Dict) -> Dict:
-        """RL-Enhanced signal generation
-        
-        Combines traditional technical analysis signals with RL enhancements.
-        The process:
-        1. Generate base signals using technical indicators
-        2. Apply RL enhancement if available for improved decision making
-        3. Store signal data in database for tracking
-        
+        """RL-Enhanced signal generation with Unified Signal Aggregation
+
+        Combines multiple signal sources:
+        1. Traditional technical analysis (Layer 1)
+        2. RL enhancement (Layer 2)
+        3. Chart analysis (OpenAI GPT-4 Vision)
+        4. CrewAI multi-agent system
+        5. Market context & cross-asset analysis
+        6. News sentiment analysis
+
         Args:
             df: DataFrame containing OHLCV market data
             indicators: Dictionary of calculated technical indicators
-            
+
         Returns:
-            Dict: Complete signal data including direction, strength, reasons, and RL status
+            Dict: Complete signal data including direction, strength, reasons, and enhancement status
         """
-        
-        # Get original signal using traditional logic
-        # Traditional analysis provides base signal before RL enhancement
+
+        # Get original signal using traditional logic (Layer 1)
         original_signal_data = self._generate_original_signals(df, indicators)
-        
-        # Apply RL enhancement if available
-        # RL system can modify signal strength and direction based on learned patterns
+
+        # Apply RL enhancement if available (Layer 2)
+        rl_signal_data = {'action': 'HOLD', 'confidence': 0.0}
         if RL_ENHANCEMENT_ENABLED:
             try:
                 # Prepare indicators for RL
@@ -456,20 +490,91 @@ class RLEnhancedBinanceFuturesBot:
                     'ema_9': indicators['ema_9'].iloc[-1],
                     'ema_21': indicators['ema_21'].iloc[-1]
                 }
-                
-                # Get RL enhancement - Pass indicators to RL system for analysis
+
+                # Get RL enhancement
                 enhanced = rl_generator(original_signal_data, indicator_dict)
-                
-                # Log the enhancement
+
+                # Store risk level for position sizing
+                self._current_risk_level = enhanced.get('risk_level', 'LOW')
+
+                # Convert to format for unified aggregator
+                rl_signal_data = {
+                    'action': 'BUY' if enhanced['signal'] > 0 else 'SELL' if enhanced['signal'] < 0 else 'HOLD',
+                    'confidence': enhanced.get('strength', 0) * 20.0,  # Convert 0-5 to 0-100
+                    'reason': enhanced.get('reason', '')
+                }
+
                 logger.info(f"💹 Current SUIUSDC Price: ${df['close'].iloc[-1]:.4f}")
-                logger.info(f"🤖 RL Enhancement:")
+                logger.info(f"🤖 RL Enhancement: {rl_signal_data['action']} (confidence: {rl_signal_data['confidence']:.1f}%)")
+
+            except Exception as e:
+                logger.error(f"❌ RL Enhancement failed: {e}")
+
+        # Use Unified Signal Aggregator if available
+        if UNIFIED_SIGNALS_ENABLED and self.unified_aggregator:
+            try:
+                # Convert traditional signal to format for aggregator
+                tech_action = 'BUY' if original_signal_data['signal'] > 0 else 'SELL' if original_signal_data['signal'] < 0 else 'HOLD'
+                tech_signal = {
+                    'action': tech_action,
+                    'strength': original_signal_data['strength'],
+                    'confidence': min(original_signal_data['strength'] * 20.0, 100.0),
+                    'indicators': original_signal_data.get('indicators', {})
+                }
+
+                # Get unified signal from aggregator
+                current_price = df['close'].iloc[-1]
+                unified_result = self.unified_aggregator.aggregate_signals(
+                    technical_signal=tech_signal,
+                    rl_signal=rl_signal_data,
+                    current_price=current_price,
+                    symbol=self.symbol
+                )
+
+                # Log unified signal summary
+                logger.info(self.unified_aggregator.get_signal_summary(unified_result))
+
+                # Convert unified signal back to bot's format
+                unified_action = unified_result['signal']
+                signal_value = 1 if unified_action == 'BUY' else -1 if unified_action == 'SELL' else 0
+                strength_value = int(unified_result['strength'] / 2)  # Convert 0-10 to 0-5
+
+                signal_data = {
+                    'signal': signal_value,
+                    'strength': strength_value,
+                    'reasons': [
+                        f"Unified Signal: {unified_action} (strength: {unified_result['strength']:.1f}/10, confidence: {unified_result['confidence']:.1f}%)"
+                    ] + original_signal_data.get('reasons', []),
+                    'indicators': self._extract_current_indicators(indicators),
+                    'rl_enhanced': RL_ENHANCEMENT_ENABLED,
+                    'unified_signal': True,
+                    'unified_details': unified_result
+                }
+
+            except Exception as e:
+                logger.error(f"❌ Unified Signal Aggregation failed: {e}")
+                # Fallback to RL or traditional signal
+                if RL_ENHANCEMENT_ENABLED and rl_signal_data['confidence'] > 0:
+                    signal_data = {
+                        'signal': enhanced['signal'],
+                        'strength': enhanced['strength'],
+                        'reasons': [enhanced['reason']] + original_signal_data.get('reasons', []),
+                        'indicators': self._extract_current_indicators(indicators),
+                        'rl_enhanced': True
+                    }
+                else:
+                    signal_data = original_signal_data
+
+        # Fallback to RL or traditional if unified not available
+        elif RL_ENHANCEMENT_ENABLED and rl_signal_data['confidence'] > 0:
+            try:
+                enhanced = rl_generator(original_signal_data, indicator_dict)
                 logger.info(f"   Original: Signal={original_signal_data['signal']}, Strength={original_signal_data['strength']}")
                 logger.info(f"   Enhanced: Signal={enhanced['signal']}, Strength={enhanced['strength']}")
                 logger.info(f"   Reason: {enhanced['reason']}")
-                
-                # Store risk level for position sizing - RL determines risk level
+
                 self._current_risk_level = enhanced.get('risk_level', 'LOW')
-                
+
                 signal_data = {
                     'signal': enhanced['signal'],
                     'strength': enhanced['strength'],
@@ -477,22 +582,21 @@ class RLEnhancedBinanceFuturesBot:
                     'indicators': self._extract_current_indicators(indicators),
                     'rl_enhanced': True
                 }
-                
             except Exception as e:
                 logger.error(f"❌ RL Enhancement failed: {e}")
                 signal_data = original_signal_data
         else:
-            logger.warning("⚠️ Running without RL enhancement - using traditional signals only")
+            logger.warning("⚠️ Running with traditional signals only")
             signal_data = original_signal_data
 
-        # Store the signal in the database for tracking and analysis
+        # Store the signal in the database
         signal_id = self.db.store_signal(
             self.symbol,
             df['close'].iloc[-1],
             signal_data
         )
         signal_data['signal_id'] = signal_id
-        
+
         return signal_data
     
     def _generate_original_signals(self, df: pd.DataFrame, indicators: Dict) -> Dict:
