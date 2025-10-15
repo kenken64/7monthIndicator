@@ -8,17 +8,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Enhanced Dashboard CSS -->
+    <link rel="stylesheet" href="/static/enhanced-dashboard.css">
     <style>
-        .card { @apply bg-white rounded-lg shadow-md p-4 sm:p-6; }
-        .metric { @apply text-center p-3 sm:p-4 rounded-lg; }
-        .metric-positive { @apply bg-green-100 text-green-800; }
-        .metric-negative { @apply bg-red-100 text-red-800; }
-        .metric-neutral { @apply bg-blue-100 text-blue-800; }
+        /* Legacy styles - kept for backward compatibility */
         .status-open { @apply bg-blue-500 text-white px-2 py-1 rounded text-xs; }
         .status-closed { @apply bg-green-500 text-white px-2 py-1 rounded text-xs; }
-        .signal-buy { @apply bg-green-500 text-white px-2 py-1 rounded text-xs; }
-        .signal-sell { @apply bg-red-500 text-white px-2 py-1 rounded text-xs; }
-        .signal-hold { @apply bg-gray-500 text-white px-2 py-1 rounded text-xs; }
         
         /* Mobile optimizations */
         @media (max-width: 640px) {
@@ -48,21 +43,21 @@
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center py-4 space-y-3 sm:space-y-0">
                 <h1 class="text-xl sm:text-2xl font-bold text-gray-900">🤖 CryptoCurrency AI Trading Bot Dashboard (Experimental)</h1>
                 <div class="flex items-center space-x-2 sm:space-x-4 w-full sm:w-auto mobile-stack sm:flex-row">
-                    <select id="symbolSelect" class="border border-gray-300 rounded px-2 py-1 sm:px-3 sm:py-2 text-sm sm:text-base flex-1 sm:flex-none">
+                    <select id="symbolSelect" class="focus-visible border border-gray-300 rounded-lg px-2 py-1 sm:px-3 sm:py-2 text-sm sm:text-base flex-1 sm:flex-none transition-all duration-200 hover:border-gray-400" aria-label="Select trading symbol">
                         <option value="SUIUSDC">SUIUSDC</option>
                     </select>
-                    <select id="timeRange" class="border border-gray-300 rounded px-2 py-1 sm:px-3 sm:py-2 text-sm sm:text-base flex-1 sm:flex-none">
+                    <select id="timeRange" class="focus-visible border border-gray-300 rounded-lg px-2 py-1 sm:px-3 sm:py-2 text-sm sm:text-base flex-1 sm:flex-none transition-all duration-200 hover:border-gray-400" aria-label="Select time range">
                         <option value="7">7 Days</option>
                         <option value="30" selected>30 Days</option>
                         <option value="90">90 Days</option>
                     </select>
-                    <button id="refreshBtn" class="bg-blue-500 text-white px-3 py-1 sm:px-4 sm:py-2 rounded hover:bg-blue-600 text-sm sm:text-base flex-1 sm:flex-none">
+                    <button id="refreshBtn" class="btn btn-primary btn-sm flex-1 sm:flex-none" aria-label="Refresh dashboard data">
                         🔄 <span class="hidden sm:inline">Refresh</span>
                     </button>
-                    <button id="logsBtn" class="bg-green-500 text-white px-3 py-1 sm:px-4 sm:py-2 rounded hover:bg-green-600 text-sm sm:text-base flex-1 sm:flex-none">
+                    <button id="logsBtn" class="btn btn-success btn-sm flex-1 sm:flex-none" aria-label="View system logs">
                         📋 <span class="hidden sm:inline">Logs</span>
                     </button>
-                    <button id="pauseBtn" class="bg-yellow-500 text-white px-3 py-1 sm:px-4 sm:py-2 rounded hover:bg-yellow-600 text-sm sm:text-base flex-1 sm:flex-none">
+                    <button id="pauseBtn" class="btn btn-warning btn-sm flex-1 sm:flex-none" aria-label="Pause trading bot">
                         ⏸️ <span class="hidden sm:inline" id="pauseBtnText">Pause</span>
                     </button>
                 </div>
@@ -71,55 +66,106 @@
     </header>
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <!-- System Status -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div class="card metric metric-neutral">
-                <div class="text-2xl font-bold" id="totalSignals">-</div>
-                <div class="text-sm text-gray-600">Total Signals</div>
+        <!-- System Status - Enhanced Design -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <!-- Total Signals Card -->
+            <div class="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg p-6 text-white fade-in transform transition-all duration-200 hover:scale-105 hover:shadow-xl" role="region" aria-label="Total Signals">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="text-sm font-medium text-blue-100 uppercase tracking-wide">Total Signals</div>
+                    <div class="bg-white/20 rounded-lg p-2 backdrop-blur-sm">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="text-4xl font-bold tracking-tight" id="totalSignals" aria-live="polite">-</div>
+                <div class="mt-2 text-xs text-blue-100">All time signals generated</div>
             </div>
-            <div class="card metric metric-neutral">
-                <div class="text-2xl font-bold" id="totalTrades">-</div>
-                <div class="text-sm text-gray-600">Total Trades</div>
+
+            <!-- Total Trades Card -->
+            <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl shadow-lg p-6 text-white fade-in transform transition-all duration-200 hover:scale-105 hover:shadow-xl" role="region" aria-label="Total Trades" style="animation-delay: 0.1s;">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="text-sm font-medium text-purple-100 uppercase tracking-wide">Total Trades</div>
+                    <div class="bg-white/20 rounded-lg p-2 backdrop-blur-sm">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"/>
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="text-4xl font-bold tracking-tight" id="totalTrades" aria-live="polite">-</div>
+                <div class="mt-2 text-xs text-purple-100">Executed positions</div>
             </div>
-            <div class="card metric metric-positive">
-                <div class="text-2xl font-bold" id="openTrades">-</div>
-                <div class="text-sm text-gray-600">Open Positions</div>
+
+            <!-- Open Positions Card -->
+            <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-xl shadow-lg p-6 text-white fade-in transform transition-all duration-200 hover:scale-105 hover:shadow-xl" role="region" aria-label="Open Positions" style="animation-delay: 0.2s;">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="text-sm font-medium text-green-100 uppercase tracking-wide">Open Positions</div>
+                    <div class="bg-white/20 rounded-lg p-2 backdrop-blur-sm">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="text-4xl font-bold tracking-tight" id="openTrades" aria-live="polite">-</div>
+                <div class="mt-2 text-xs text-green-100">Active trading positions</div>
             </div>
-            <div class="card metric metric-neutral">
-                <div class="text-sm font-bold" id="lastSignal">-</div>
-                <div class="text-sm text-gray-600">Last Signal</div>
+
+            <!-- Last Signal Card -->
+            <div class="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg p-6 text-white fade-in transform transition-all duration-200 hover:scale-105 hover:shadow-xl" role="region" aria-label="Last Signal" style="animation-delay: 0.3s;">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="text-sm font-medium text-orange-100 uppercase tracking-wide">Last Signal</div>
+                    <div class="bg-white/20 rounded-lg p-2 backdrop-blur-sm">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="text-xl sm:text-2xl font-bold tracking-tight" id="lastSignal" aria-live="polite">-</div>
+                <div class="mt-2 text-xs text-orange-100">Most recent signal time</div>
             </div>
         </div>
 
         <!-- Chart Analysis Section -->
         <div class="mb-8">
-            <div class="card">
-                <h3 class="text-lg font-semibold mb-4">📊 SUI/USDC Chart Analysis</h3>
-                <div id="chartAnalysisSection">
-                    <div class="mb-4">
-                        <img id="chartImage" src="" alt="Loading chart..." class="w-full h-auto rounded-lg border shadow-sm" style="display: none;">
-                        <div id="chartLoading" class="flex justify-center items-center h-64 bg-gray-50 rounded-lg">
-                            <div class="text-gray-500">Loading chart analysis...</div>
+            <div class="card chart-analysis-card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <span class="text-2xl">📊</span>
+                        <span class="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">SUI/USDC Chart Analysis</span>
+                    </h3>
+                    <div class="flex items-center gap-2">
+                        <span class="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">GPT-4 Vision</span>
+                        <span class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">AI Powered</span>
+                    </div>
+                </div>
+                <div id="chartAnalysisSection" class="card-body">
+                    <div class="mb-4 relative">
+                        <img id="chartImage" src="" alt="Chart analysis visualization" class="w-full h-auto rounded-lg border-2 border-blue-200 shadow-lg fade-in" style="display: none;">
+                        <div id="chartLoading" class="flex flex-col justify-center items-center h-64 rounded-lg">
+                            <div class="loading-spinner mb-3 w-12 h-12 border-4 border-blue-500"></div>
+                            <div class="text-gray-600 text-sm font-medium">Analyzing chart with GPT-4 Vision...</div>
+                            <div class="text-gray-400 text-xs mt-2">This may take a few seconds</div>
                         </div>
                     </div>
-                    
+
                     <!-- Analysis Results -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" id="analysisResults" style="display: none;">
-                        <div class="metric" id="recommendationCard">
-                            <div class="text-lg font-bold" id="recommendation">-</div>
-                            <div class="text-sm text-gray-600">Recommendation</div>
+                        <div class="metric bounce-in" id="recommendationCard" role="region" aria-label="AI Recommendation">
+                            <div class="metric-value text-lg" id="recommendation">-</div>
+                            <div class="metric-label">Recommendation</div>
                         </div>
-                        <div class="metric metric-neutral">
-                            <div class="text-lg font-bold" id="confidence">-</div>
-                            <div class="text-sm text-gray-600">Confidence</div>
+                        <div class="metric metric-neutral bounce-in" role="region" aria-label="Confidence Level" style="animation-delay: 0.1s;">
+                            <div class="metric-value text-lg" id="confidence">-</div>
+                            <div class="metric-label">Confidence</div>
                         </div>
-                        <div class="metric metric-neutral">
-                            <div class="text-lg font-bold" id="currentPrice">-</div>
-                            <div class="text-sm text-gray-600">Current Price</div>
+                        <div class="metric metric-neutral bounce-in" role="region" aria-label="Current Price" style="animation-delay: 0.2s;">
+                            <div class="metric-value text-lg" id="currentPrice">-</div>
+                            <div class="metric-label">Current Price</div>
                         </div>
-                        <div class="metric metric-neutral">
-                            <div class="text-lg font-bold" id="priceChange">-</div>
-                            <div class="text-sm text-gray-600">24h Change</div>
+                        <div class="metric metric-neutral bounce-in" role="region" aria-label="24 Hour Change" style="animation-delay: 0.3s;">
+                            <div class="metric-value text-lg" id="priceChange">-</div>
+                            <div class="metric-label">24h Change</div>
                         </div>
                     </div>
                     
@@ -149,52 +195,288 @@
         </div>
 
         <!-- Market Context Section -->
-        <div class="card mb-8">
-            <h3 class="text-lg font-semibold mb-4">🌍 Market Context & Cross-Asset Analysis</h3>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div class="metric metric-neutral">
-                    <div class="text-lg font-bold" id="btcPrice">-</div>
-                    <div class="text-sm text-gray-600">BTC Price</div>
-                    <div class="text-xs" id="btcChange">-</div>
-                </div>
-                <div class="metric metric-neutral">
-                    <div class="text-lg font-bold" id="ethPrice">-</div>
-                    <div class="text-sm text-gray-600">ETH Price</div>
-                    <div class="text-xs" id="ethChange">-</div>
-                </div>
-                <div class="metric metric-neutral">
-                    <div class="text-lg font-bold" id="btcDominance">-</div>
-                    <div class="text-sm text-gray-600">BTC Dominance</div>
-                </div>
-                <div class="metric metric-neutral">
-                    <div class="text-lg font-bold" id="fearGreedIndex">-</div>
-                    <div class="text-sm text-gray-600">Fear & Greed</div>
+        <div class="card market-context-card mb-8">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <span class="text-2xl">🌍</span>
+                    <span class="bg-gradient-to-r from-green-600 to-teal-600 bg-clip-text text-transparent">Market Context & Cross-Asset Analysis</span>
+                </h3>
+                <div class="flex items-center gap-2">
+                    <span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">Real-Time Data</span>
+                    <span class="px-3 py-1 bg-teal-100 text-teal-800 rounded-full text-xs font-semibold">Multi-Asset</span>
                 </div>
             </div>
-            
+
+            <!-- Major Crypto Prices -->
+            <div class="mb-6">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="text-sm font-semibold text-gray-700">💰 Major Crypto Assets</span>
+                    <div class="h-px flex-1 bg-gradient-to-r from-green-200 to-transparent"></div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="crypto-price-card">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-gray-600">Bitcoin</span>
+                            <span class="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded">BTC</span>
+                        </div>
+                        <div class="text-2xl font-bold text-gray-900" id="btcPrice">-</div>
+                        <div class="text-sm mt-1" id="btcChange">-</div>
+                    </div>
+                    <div class="crypto-price-card">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-gray-600">Ethereum</span>
+                            <span class="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">ETH</span>
+                        </div>
+                        <div class="text-2xl font-bold text-gray-900" id="ethPrice">-</div>
+                        <div class="text-sm mt-1" id="ethChange">-</div>
+                    </div>
+                    <div class="crypto-price-card">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-gray-600">BTC Dominance</span>
+                            <span class="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded">DOM</span>
+                        </div>
+                        <div class="text-2xl font-bold text-gray-900" id="btcDominance">-</div>
+                        <div class="text-xs text-gray-500 mt-1">Market Share</div>
+                    </div>
+                    <div class="crypto-price-card fear-greed-card">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-gray-600">Fear & Greed</span>
+                            <span class="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">INDEX</span>
+                        </div>
+                        <div class="text-2xl font-bold text-gray-900" id="fearGreedIndex">-</div>
+                        <div class="text-xs text-gray-500 mt-1">Sentiment</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Cross-Asset Signals -->
-            <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div class="bg-gray-50 p-3 rounded">
-                    <div class="text-sm font-semibold text-gray-700">Market Trend</div>
-                    <div class="text-lg font-bold" id="marketTrend">-</div>
+            <div>
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="text-sm font-semibold text-gray-700">📊 Cross-Asset Signals</span>
+                    <div class="h-px flex-1 bg-gradient-to-r from-teal-200 to-transparent"></div>
                 </div>
-                <div class="bg-gray-50 p-3 rounded">
-                    <div class="text-sm font-semibold text-gray-700">BTC Trend</div>
-                    <div class="text-lg font-bold" id="btcTrend">-</div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div class="market-signal-card">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-sm font-bold">📈</div>
+                            <span class="text-sm font-semibold text-gray-700">Market Trend</span>
+                        </div>
+                        <div class="text-xl font-bold" id="marketTrend">-</div>
+                    </div>
+                    <div class="market-signal-card">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center text-white text-sm font-bold">₿</div>
+                            <span class="text-sm font-semibold text-gray-700">BTC Trend</span>
+                        </div>
+                        <div class="text-xl font-bold" id="btcTrend">-</div>
+                    </div>
+                    <div class="market-signal-card">
+                        <div class="flex items-center gap-2 mb-2">
+                            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">🎯</div>
+                            <span class="text-sm font-semibold text-gray-700">Market Regime</span>
+                        </div>
+                        <div class="text-xl font-bold" id="marketRegime">-</div>
+                    </div>
                 </div>
-                <div class="bg-gray-50 p-3 rounded">
-                    <div class="text-sm font-semibold text-gray-700">Market Regime</div>
-                    <div class="text-lg font-bold" id="marketRegime">-</div>
+            </div>
+        </div>
+
+        <!-- Unified Signal Aggregation Section -->
+        <div class="card unified-signals-card mb-8">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <span class="text-2xl">🎯</span>
+                    <span class="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Unified Signal Aggregation</span>
+                </h3>
+                <div class="flex items-center gap-2">
+                    <span class="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-xs font-semibold">6 Sources</span>
+                    <span class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">AI Weighted</span>
+                </div>
+            </div>
+
+            <!-- Unified Decision Display -->
+            <div class="mb-6">
+                <div class="unified-decision-box">
+                    <div class="flex flex-col sm:flex-row justify-between items-center space-y-4 sm:space-y-0">
+                        <div class="text-center sm:text-left">
+                            <div class="text-sm text-gray-600 mb-1 font-medium">Unified Decision</div>
+                            <div class="text-4xl font-bold unified-decision-text" id="unifiedDecision">-</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-sm text-gray-600 mb-1 font-medium">Signal Strength</div>
+                            <div class="text-3xl font-bold text-blue-600" id="unifiedStrength">-</div>
+                            <div class="text-xs text-gray-500 mt-1">out of 10</div>
+                        </div>
+                        <div class="text-center sm:text-right">
+                            <div class="text-sm text-gray-600 mb-1 font-medium">Overall Confidence</div>
+                            <div class="text-3xl font-bold text-purple-600" id="unifiedConfidence">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Signal Source Breakdown -->
+            <div class="mb-4">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="text-sm font-semibold text-gray-700">📊 Signal Source Breakdown</span>
+                    <div class="h-px flex-1 bg-gradient-to-r from-indigo-200 to-transparent"></div>
+                </div>
+                <div class="space-y-3">
+                    <!-- Technical Indicators -->
+                    <div class="signal-source-card">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center space-x-2">
+                                <div class="signal-icon-badge signal-icon-blue">📈</div>
+                                <span class="text-sm font-semibold">Technical Indicators</span>
+                                <span class="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-medium">25%</span>
+                            </div>
+                            <span class="text-sm font-bold signal-value" id="technicalSignal">-</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="flex-1 bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                <div class="bg-gradient-to-r from-blue-500 to-blue-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" id="technicalBar" style="width: 0%"></div>
+                            </div>
+                            <span class="text-xs text-gray-600 w-20 text-right font-medium" id="technicalScore">-</span>
+                        </div>
+                    </div>
+
+                    <!-- RL Signal -->
+                    <div class="signal-source-card">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center space-x-2">
+                                <div class="signal-icon-badge signal-icon-purple">🧠</div>
+                                <span class="text-sm font-semibold">RL Enhancement</span>
+                                <span class="text-xs bg-purple-100 text-purple-800 px-2 py-0.5 rounded font-medium">15%</span>
+                            </div>
+                            <span class="text-sm font-bold signal-value" id="rlSignalDisplay">-</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="flex-1 bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                <div class="bg-gradient-to-r from-purple-500 to-purple-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" id="rlBar" style="width: 0%"></div>
+                            </div>
+                            <span class="text-xs text-gray-600 w-20 text-right font-medium" id="rlScore">-</span>
+                        </div>
+                    </div>
+
+                    <!-- Chart Analysis -->
+                    <div class="signal-source-card">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center space-x-2">
+                                <div class="signal-icon-badge signal-icon-green">📊</div>
+                                <span class="text-sm font-semibold">Chart Analysis</span>
+                                <span class="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded font-medium">30%</span>
+                            </div>
+                            <span class="text-sm font-bold signal-value" id="chartSignal">-</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="flex-1 bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                <div class="bg-gradient-to-r from-green-500 to-green-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" id="chartBar" style="width: 0%"></div>
+                            </div>
+                            <span class="text-xs text-gray-600 w-20 text-right font-medium" id="chartScore">-</span>
+                        </div>
+                    </div>
+
+                    <!-- CrewAI Multi-Agent -->
+                    <div class="signal-source-card">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center space-x-2">
+                                <div class="signal-icon-badge signal-icon-orange">🤖</div>
+                                <span class="text-sm font-semibold">AI Multi-Agent</span>
+                                <span class="text-xs bg-orange-100 text-orange-800 px-2 py-0.5 rounded font-medium">15%</span>
+                            </div>
+                            <span class="text-sm font-bold signal-value" id="crewaiSignal">-</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="flex-1 bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                <div class="bg-gradient-to-r from-orange-500 to-orange-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" id="crewaiBar" style="width: 0%"></div>
+                            </div>
+                            <span class="text-xs text-gray-600 w-20 text-right font-medium" id="crewaiScore">-</span>
+                        </div>
+                    </div>
+
+                    <!-- Market Context -->
+                    <div class="signal-source-card">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center space-x-2">
+                                <div class="signal-icon-badge signal-icon-indigo">🌍</div>
+                                <span class="text-sm font-semibold">Market Context</span>
+                                <span class="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-medium">10%</span>
+                            </div>
+                            <span class="text-sm font-bold signal-value" id="marketContextSignal">-</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="flex-1 bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                <div class="bg-gradient-to-r from-indigo-500 to-indigo-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" id="marketContextBar" style="width: 0%"></div>
+                            </div>
+                            <span class="text-xs text-gray-600 w-20 text-right font-medium" id="marketContextScore">-</span>
+                        </div>
+                    </div>
+
+                    <!-- News Sentiment -->
+                    <div class="signal-source-card">
+                        <div class="flex justify-between items-center mb-2">
+                            <div class="flex items-center space-x-2">
+                                <div class="signal-icon-badge signal-icon-pink">📰</div>
+                                <span class="text-sm font-semibold">News Sentiment</span>
+                                <span class="text-xs bg-pink-100 text-pink-800 px-2 py-0.5 rounded font-medium">5%</span>
+                            </div>
+                            <span class="text-sm font-bold signal-value" id="newsSignal">-</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="flex-1 bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                                <div class="bg-gradient-to-r from-pink-500 to-pink-600 h-2.5 rounded-full transition-all duration-500 shadow-sm" id="newsBar" style="width: 0%"></div>
+                            </div>
+                            <span class="text-xs text-gray-600 w-20 text-right font-medium" id="newsScore">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Signal Details -->
+            <div class="flex items-center gap-2 mb-3 mt-6">
+                <span class="text-sm font-semibold text-gray-700">📈 Signal Metrics</span>
+                <div class="h-px flex-1 bg-gradient-to-r from-purple-200 to-transparent"></div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="signal-metric-card">
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xs">⏱️</div>
+                        <div class="text-xs text-gray-600 font-medium">Signal Age</div>
+                    </div>
+                    <div class="text-lg font-bold text-gray-900" id="signalAge">-</div>
+                </div>
+                <div class="signal-metric-card">
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white text-xs">✓</div>
+                        <div class="text-xs text-gray-600 font-medium">Data Quality</div>
+                    </div>
+                    <div class="text-lg font-bold text-gray-900" id="dataQuality">-</div>
+                </div>
+                <div class="signal-metric-card">
+                    <div class="flex items-center gap-2 mb-1">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center text-white text-xs">🔄</div>
+                        <div class="text-xs text-gray-600 font-medium">Last Updated</div>
+                    </div>
+                    <div class="text-sm font-bold text-gray-900" id="unifiedTimestamp">-</div>
                 </div>
             </div>
         </div>
 
         <!-- CrewAI Multi-Agent System Section -->
-        <div class="card mb-8">
-            <h3 class="text-lg font-semibold mb-4">🤖 AI Multi-Agent System</h3>
+        <div class="card crewai-system-card mb-8">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <span class="text-2xl">🤖</span>
+                    <span class="bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">AI Multi-Agent System</span>
+                </h3>
+                <div class="flex items-center gap-2">
+                    <span class="px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-semibold">CrewAI</span>
+                    <span class="px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">5 Agents</span>
+                </div>
+            </div>
 
             <!-- Circuit Breaker Status -->
-            <div class="bg-gray-50 p-4 rounded-lg mb-4">
+            <div class="circuit-breaker-status mb-4">
                 <div class="flex items-center justify-between mb-2">
                     <h4 class="font-semibold text-sm">🛡️ Circuit Breaker Status</h4>
                     <span class="text-xs font-bold px-3 py-1 rounded" id="circuitBreakerBadge">Loading...</span>
@@ -217,27 +499,27 @@
 
             <!-- AI Agents Status -->
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
-                <div class="bg-white border-2 border-gray-200 p-3 rounded-lg">
+                <div class="agent-status-card">
                     <div class="text-xs text-gray-600 mb-1">🛡️ Market Guardian</div>
                     <div class="text-sm font-bold" id="agentMarketGuardian">-</div>
                     <div class="text-xs text-gray-500" id="agentMarketGuardianActivity">-</div>
                 </div>
-                <div class="bg-white border-2 border-gray-200 p-3 rounded-lg">
+                <div class="agent-status-card">
                     <div class="text-xs text-gray-600 mb-1">🔍 Market Scanner</div>
                     <div class="text-sm font-bold" id="agentMarketScanner">-</div>
                     <div class="text-xs text-gray-500" id="agentMarketScannerActivity">-</div>
                 </div>
-                <div class="bg-white border-2 border-gray-200 p-3 rounded-lg">
+                <div class="agent-status-card">
                     <div class="text-xs text-gray-600 mb-1">📊 Context Analyzer</div>
                     <div class="text-sm font-bold" id="agentContextAnalyzer">-</div>
                     <div class="text-xs text-gray-500" id="agentContextAnalyzerActivity">-</div>
                 </div>
-                <div class="bg-white border-2 border-gray-200 p-3 rounded-lg">
+                <div class="agent-status-card">
                     <div class="text-xs text-gray-600 mb-1">⚖️ Risk Assessment</div>
                     <div class="text-sm font-bold" id="agentRiskAssessment">-</div>
                     <div class="text-xs text-gray-500" id="agentRiskAssessmentActivity">-</div>
                 </div>
-                <div class="bg-white border-2 border-gray-200 p-3 rounded-lg">
+                <div class="agent-status-card">
                     <div class="text-xs text-gray-600 mb-1">⚡ Strategy Executor</div>
                     <div class="text-sm font-bold" id="agentStrategyExecutor">-</div>
                     <div class="text-xs text-gray-500" id="agentStrategyExecutorActivity">-</div>
@@ -246,21 +528,118 @@
 
             <!-- System Statistics -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div class="bg-blue-50 p-3 rounded text-center">
+                <div class="system-stat-card stat-blue">
                     <div class="text-xs text-gray-600">Spikes Detected</div>
                     <div class="text-lg font-bold text-blue-600" id="spikesDetected">0</div>
                 </div>
-                <div class="bg-green-50 p-3 rounded text-center">
+                <div class="system-stat-card stat-green">
                     <div class="text-xs text-gray-600">Agent Decisions</div>
                     <div class="text-lg font-bold text-green-600" id="agentDecisions">0</div>
                 </div>
-                <div class="bg-purple-50 p-3 rounded text-center">
+                <div class="system-stat-card stat-purple">
                     <div class="text-xs text-gray-600">CB Triggers</div>
                     <div class="text-lg font-bold text-purple-600" id="cbTriggers">0</div>
                 </div>
-                <div class="bg-orange-50 p-3 rounded text-center">
+                <div class="system-stat-card stat-orange">
                     <div class="text-xs text-gray-600">System Status</div>
                     <div class="text-sm font-bold" id="aiSystemStatus">-</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- HyperDash Trader Monitoring Section -->
+        <div class="card hyperdash-card mb-8">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <span class="text-2xl">👤</span>
+                    <span class="bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">HyperDash Trader Monitor</span>
+                </h3>
+                <div class="view-toggle-tabs">
+                    <button id="tabTableView" class="active" onclick="switchHyperDashView('table')">
+                        📊 Table
+                    </button>
+                    <button id="tabIframeView" onclick="switchHyperDashView('iframe')">
+                        🌐 Live View
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table View -->
+            <div id="hyperdashTableView">
+                <!-- Trader Summary -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+                    <div class="trader-summary-card pnl-neutral">
+                        <div class="text-xs text-gray-600">Total PnL</div>
+                        <div class="text-lg font-bold text-green-600" id="traderTotalPnl">-</div>
+                    </div>
+                    <div class="trader-summary-card pnl-neutral">
+                        <div class="text-xs text-gray-600">Total Margin</div>
+                        <div class="text-lg font-bold text-blue-600" id="traderTotalMargin">-</div>
+                    </div>
+                    <div class="trader-summary-card pnl-neutral">
+                        <div class="text-xs text-gray-600">Account Value</div>
+                        <div class="text-lg font-bold text-purple-600" id="traderAccountValue">-</div>
+                    </div>
+                </div>
+
+                <!-- Open Orders Table -->
+                <div class="overflow-x-auto">
+                    <table class="min-w-full">
+                        <thead class="bg-gray-50 border-b">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
+                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Side</th>
+                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Size</th>
+                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Entry</th>
+                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Current</th>
+                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">PnL</th>
+                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">PnL %</th>
+                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Leverage</th>
+                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Liq. Price</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hyperdashOrdersTable" class="divide-y divide-gray-200">
+                            <tr>
+                                <td colspan="9" class="px-3 py-8 text-center text-gray-500 text-sm">Loading trader data...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mt-3 flex justify-between items-center text-xs text-gray-500">
+                    <span id="hyperdashStatus">Status: Loading...</span>
+                    <span>Trader: 0xb317...83ae</span>
+                </div>
+            </div>
+
+            <!-- Iframe View -->
+            <div id="hyperdashIframeView" style="display: none;">
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                    <div class="flex items-start">
+                        <span class="text-yellow-600 mr-2">⚠️</span>
+                        <div class="text-xs text-yellow-800">
+                            <strong>Note:</strong> HyperDash has X-Frame-Options: SAMEORIGIN which may block iframe embedding from external domains. If the page doesn't load, use the "Open in New Tab" button below.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3 flex justify-end">
+                    <a href="https://hyperdash.info/zh-CN/trader/0xb317d2bc2d3d2df5fa441b5bae0ab9d8b07283ae"
+                       target="_blank"
+                       class="bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 inline-flex items-center">
+                        🔗 Open in New Tab
+                    </a>
+                </div>
+
+                <div class="border-2 border-gray-200 rounded-lg overflow-hidden" style="height: 800px;">
+                    <iframe
+                        id="hyperdashIframe"
+                        src="https://hyperdash.info/zh-CN/trader/0xb317d2bc2d3d2df5fa441b5bae0ab9d8b07283ae"
+                        class="w-full h-full"
+                        frameborder="0"
+                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                        loading="lazy">
+                    </iframe>
                 </div>
             </div>
         </div>
@@ -268,8 +647,14 @@
         <!-- Spike Detections & Agent Decisions -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <!-- Recent Spike Detections -->
-            <div class="card">
-                <h3 class="text-lg font-semibold mb-4">⚡ Recent Spike Detections</h3>
+            <div class="card spike-decision-card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <span class="text-2xl">⚡</span>
+                        <span class="bg-gradient-to-r from-red-600 to-pink-600 bg-clip-text text-transparent">Recent Spike Detections</span>
+                    </h3>
+                    <span class="px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">Live</span>
+                </div>
                 <div class="overflow-y-auto max-h-96">
                     <div id="spikeDetectionsList" class="space-y-2">
                         <div class="text-center text-gray-500 text-sm py-8">Loading spike detections...</div>
@@ -278,8 +663,14 @@
             </div>
 
             <!-- Recent Agent Decisions -->
-            <div class="card">
-                <h3 class="text-lg font-semibold mb-4">🧠 Recent Agent Decisions</h3>
+            <div class="card spike-decision-card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <span class="text-2xl">🧠</span>
+                        <span class="bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Recent Agent Decisions</span>
+                    </h3>
+                    <span class="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-semibold">AI Powered</span>
+                </div>
                 <div class="overflow-y-auto max-h-96">
                     <div id="agentDecisionsList" class="space-y-2">
                         <div class="text-center text-gray-500 text-sm py-8">Loading agent decisions...</div>
@@ -289,38 +680,38 @@
         </div>
 
         <!-- AI Agent System Logs -->
-        <div class="card mb-8">
+        <div class="card logs-card mb-8">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-semibold">📋 AI Agent System Logs</h3>
+                <h3 class="text-lg font-semibold text-gray-900">📋 AI Agent System Logs</h3>
                 <div class="flex items-center space-x-2">
-                    <select id="logLevelFilter" class="border border-gray-300 rounded px-2 py-1 text-sm">
+                    <select id="logLevelFilter" class="border border-gray-300 bg-white text-gray-900 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500">
                         <option value="all">All Levels</option>
                         <option value="info">Info</option>
                         <option value="warning">Warning</option>
                         <option value="error">Error</option>
                     </select>
-                    <button id="refreshLogsBtn" class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 text-sm">
+                    <button id="refreshLogsBtn" class="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 text-sm transition-colors duration-200">
                         🔄 Refresh
                     </button>
-                    <button id="clearLogsBtn" class="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 text-sm">
+                    <button id="clearLogsBtn" class="bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600 text-sm transition-colors duration-200">
                         🗑️ Clear
                     </button>
                 </div>
             </div>
-            <div class="overflow-y-auto max-h-96 bg-gray-900 rounded-lg p-4 font-mono text-xs">
+            <div class="log-terminal">
                 <div id="agentLogsList" class="space-y-1">
-                    <div class="text-gray-400 text-center py-8">Loading AI agent logs...</div>
+                    <div class="text-gray-600 text-center py-8">Loading AI agent logs...</div>
                 </div>
             </div>
-            <div class="mt-2 text-xs text-gray-500 flex justify-between items-center">
+            <div class="mt-2 text-xs text-gray-600 flex justify-between items-center">
                 <span id="logCount">0 log entries</span>
-                <span class="text-gray-400">Auto-refreshes every 10 seconds</span>
+                <span class="text-gray-500">Auto-refreshes every 10 seconds</span>
             </div>
         </div>
 
         <!-- RL Bot Live Status -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-8">
-            <div class="card">
+            <div class="card rl-bot-card">
                 <h3 class="text-lg font-semibold mb-4">🤖 RL Bot Status</h3>
                 <div class="space-y-2">
                     <div class="flex justify-between items-center">
@@ -341,8 +732,8 @@
                     </div>
                 </div>
             </div>
-            
-            <div class="card">
+
+            <div class="card rl-bot-card">
                 <h3 class="text-lg font-semibold mb-4">🧠 RL Decision</h3>
                 <div class="space-y-2">
                     <div class="flex justify-between items-center">
@@ -357,13 +748,13 @@
                         <span class="text-sm text-gray-600">Final Decision:</span>
                         <span class="text-sm font-bold" id="finalDecision">-</span>
                     </div>
-                    <div class="mt-2 p-2 bg-gray-50 rounded text-xs" id="rlReason">
+                    <div class="mt-2 rl-decision-box text-xs" id="rlReason">
                         RL reasoning will appear here...
                     </div>
                 </div>
             </div>
-            
-            <div class="card">
+
+            <div class="card rl-bot-card">
                 <h3 class="text-lg font-semibold mb-4">📊 Live Market Data</h3>
                 <div class="space-y-2">
                     <div class="flex justify-between items-center">
@@ -384,8 +775,8 @@
                     </div>
                 </div>
             </div>
-            
-            <div class="card">
+
+            <div class="card rl-bot-card">
                 <h3 class="text-lg font-semibold mb-4">💰 Live Position</h3>
                 <div class="space-y-2" id="livePosition">
                     <div class="text-center text-gray-500 text-sm">Loading position...</div>
@@ -449,55 +840,55 @@
 
         <!-- Performance Metrics -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
-            <div class="card">
+            <div class="card performance-card">
                 <h3 class="text-lg font-semibold mb-4">📊 Performance Metrics</h3>
-                <div class="space-y-3">
-                    <div class="flex justify-between">
+                <div class="space-y-2">
+                    <div class="performance-metric">
                         <span>Win Rate:</span>
                         <span class="font-bold" id="winRate">-</span>
                     </div>
-                    <div class="flex justify-between">
+                    <div class="performance-metric">
                         <span>Total PnL:</span>
                         <span class="font-bold" id="totalPnl">-</span>
                     </div>
-                    <div class="flex justify-between">
+                    <div class="performance-metric metric-positive">
                         <span>Average Win:</span>
-                        <span class="font-bold text-green-600" id="avgWin">-</span>
+                        <span class="font-bold" id="avgWin">-</span>
                     </div>
-                    <div class="flex justify-between">
+                    <div class="performance-metric metric-negative">
                         <span>Average Loss:</span>
-                        <span class="font-bold text-red-600" id="avgLoss">-</span>
+                        <span class="font-bold" id="avgLoss">-</span>
                     </div>
-                    <div class="flex justify-between">
+                    <div class="performance-metric">
                         <span>Risk-Reward:</span>
                         <span class="font-bold" id="riskReward">-</span>
                     </div>
                 </div>
             </div>
-            
-            <div class="card">
+
+            <div class="card performance-card">
                 <h3 class="text-lg font-semibold mb-4">💰 Trade Breakdown</h3>
-                <div class="space-y-3">
-                    <div class="flex justify-between">
+                <div class="space-y-2">
+                    <div class="performance-metric">
                         <span>Total Trades:</span>
                         <span class="font-bold" id="performanceTotalTrades">-</span>
                     </div>
-                    <div class="flex justify-between">
-                        <span class="text-green-600">Winning:</span>
-                        <span class="font-bold text-green-600" id="winningTrades">-</span>
+                    <div class="performance-metric metric-positive">
+                        <span>Winning:</span>
+                        <span class="font-bold" id="winningTrades">-</span>
                     </div>
-                    <div class="flex justify-between">
-                        <span class="text-red-600">Losing:</span>
-                        <span class="font-bold text-red-600" id="losingTrades">-</span>
+                    <div class="performance-metric metric-negative">
+                        <span>Losing:</span>
+                        <span class="font-bold" id="losingTrades">-</span>
                     </div>
-                    <div class="flex justify-between">
+                    <div class="performance-metric metric-negative">
                         <span>Max Loss:</span>
-                        <span class="font-bold text-red-600" id="maxLoss">-</span>
+                        <span class="font-bold" id="maxLoss">-</span>
                     </div>
                 </div>
             </div>
 
-            <div class="card">
+            <div class="card performance-card">
                 <h3 class="text-lg font-semibold mb-4">🔵 Open Positions</h3>
                 <div id="openPositions" class="space-y-2">
                     <div class="text-center text-gray-500">Loading...</div>
@@ -580,19 +971,29 @@
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <!-- Recent Signals -->
             <div class="card">
-                <h3 class="text-lg font-semibold mb-4">🎯 Recent Signals</h3>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
+                <div class="card-header">
+                    <h3 class="card-title">🎯 Recent Signals</h3>
+                </div>
+                <div class="table-container custom-scrollbar">
+                    <table class="table-enhanced" role="table" aria-label="Recent trading signals">
+                        <thead>
                             <tr>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Signal</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Strength</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th scope="col">Time</th>
+                                <th scope="col">Signal</th>
+                                <th scope="col">Strength</th>
+                                <th scope="col">Price</th>
+                                <th scope="col">Status</th>
                             </tr>
                         </thead>
-                        <tbody id="signalsTable" class="bg-white divide-y divide-gray-200">
+                        <tbody id="signalsTable">
+                            <tr>
+                                <td colspan="5" class="text-center py-8 text-gray-500">
+                                    <div class="flex flex-col items-center">
+                                        <div class="loading-spinner mb-2"></div>
+                                        <span class="text-sm">Loading signals...</span>
+                                    </div>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -600,19 +1001,29 @@
 
             <!-- Recent Trades -->
             <div class="card">
-                <h3 class="text-lg font-semibold mb-4">💰 Recent Trades</h3>
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
+                <div class="card-header">
+                    <h3 class="card-title">💰 Recent Trades</h3>
+                </div>
+                <div class="table-container custom-scrollbar">
+                    <table class="table-enhanced" role="table" aria-label="Recent trades">
+                        <thead>
                             <tr>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Side</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Entry</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">PnL</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                                <th scope="col">Time</th>
+                                <th scope="col">Side</th>
+                                <th scope="col">Entry</th>
+                                <th scope="col">PnL</th>
+                                <th scope="col">Status</th>
                             </tr>
                         </thead>
-                        <tbody id="tradesTable" class="bg-white divide-y divide-gray-200">
+                        <tbody id="tradesTable">
+                            <tr>
+                                <td colspan="5" class="text-center py-8 text-gray-500">
+                                    <div class="flex flex-col items-center">
+                                        <div class="loading-spinner mb-2"></div>
+                                        <span class="text-sm">Loading trades...</span>
+                                    </div>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -621,48 +1032,52 @@
     </div>
 
     <!-- PIN Modal for Bot Control -->
-    <div id="pinModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" style="display: none;">
-        <div class="bg-white rounded-lg p-6 w-96 max-w-md mx-4">
+    <div id="pinModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 fade-in" style="display: none;" role="dialog" aria-labelledby="pinModalTitle" aria-modal="true">
+        <div class="bg-white rounded-xl p-6 w-96 max-w-md mx-4 shadow-xl bounce-in">
             <div class="text-center mb-6">
-                <h3 class="text-lg font-bold text-gray-900 mb-2">🔐 Bot Control Authentication</h3>
-                <p class="text-gray-600">Enter your 6-digit PIN to control the trading bot</p>
+                <h3 id="pinModalTitle" class="text-lg font-bold text-gray-900 mb-2">🔐 Bot Control Authentication</h3>
+                <p class="text-gray-600 text-sm">Enter your 6-digit PIN to control the trading bot</p>
             </div>
-            
+
             <div class="mb-4">
-                <input 
-                    type="password" 
-                    id="controlPin" 
-                    placeholder="••••••" 
-                    maxlength="6" 
-                    class="w-full text-center text-2xl font-mono bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                <input
+                    type="password"
+                    id="controlPin"
+                    placeholder="••••••"
+                    maxlength="6"
+                    class="focus-visible w-full text-center text-2xl font-mono bg-gray-50 border border-gray-300 rounded-lg px-4 py-3 transition-all duration-200 hover:border-gray-400"
                     autocomplete="off"
                     inputmode="numeric"
                     pattern="[0-9]{6}"
+                    aria-label="Enter 6-digit PIN"
+                    aria-required="true"
                 />
                 <p class="text-xs text-gray-500 mt-1 text-center">6 digits required</p>
             </div>
-            
+
             <!-- Error and status messages -->
-            <div id="pinError" class="mb-4 p-3 bg-red-100 text-red-700 rounded-md text-sm" style="display: none;"></div>
-            <div id="pinBlocked" class="mb-4 p-3 bg-orange-100 text-orange-700 rounded-md text-sm" style="display: none;"></div>
-            <div id="pinSuccess" class="mb-4 p-3 bg-green-100 text-green-700 rounded-md text-sm" style="display: none;"></div>
-            
+            <div id="pinError" class="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm slide-in-right" style="display: none;" role="alert"></div>
+            <div id="pinBlocked" class="mb-4 p-3 bg-orange-100 text-orange-700 rounded-lg text-sm slide-in-right" style="display: none;" role="alert"></div>
+            <div id="pinSuccess" class="mb-4 p-3 bg-green-100 text-green-700 rounded-lg text-sm slide-in-right" style="display: none;" role="status"></div>
+
             <div class="flex space-x-3">
-                <button 
-                    onclick="closePinModal()" 
-                    class="flex-1 bg-gray-300 text-gray-700 py-2 px-4 rounded-lg hover:bg-gray-400 transition-colors"
+                <button
+                    onclick="closePinModal()"
+                    class="btn btn-secondary flex-1"
+                    aria-label="Cancel PIN entry"
                 >
                     Cancel
                 </button>
-                <button 
-                    onclick="submitPin()" 
+                <button
+                    onclick="submitPin()"
                     id="submitPinBtn"
-                    class="flex-1 bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition-colors"
+                    class="btn btn-primary flex-1"
+                    aria-label="Submit PIN"
                 >
                     Submit
                 </button>
             </div>
-            
+
             <div class="mt-4 text-xs text-gray-500 text-center">
                 <p>⚠️ 3 attempts allowed. 15-minute lockout after failed attempts.</p>
             </div>

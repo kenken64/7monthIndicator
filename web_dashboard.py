@@ -841,22 +841,22 @@ def get_projected_balance(symbol):
 @app.route('/api/rl-decisions/<symbol>')
 def get_rl_decisions(symbol):
     """API endpoint to get recent RL-enhanced decisions
-    
+
     Retrieves recent decisions made by the RL enhancement system
     including confidence levels and decision reasoning.
-    
+
     Args:
         symbol: Trading pair symbol
-        
+
     Query Parameters:
         limit: Maximum number of decisions to return (default: 5)
-        
+
     Returns:
         JSON response with RL decision data
     """
     limit = request.args.get('limit', 5, type=int)
     db = get_database()
-    
+
     try:
         signals = db.get_recent_rl_signals(symbol, limit)
         return jsonify({
@@ -865,6 +865,376 @@ def get_rl_decisions(symbol):
         })
     except Exception as e:
         logger.error(f"Error getting RL decisions: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/unified-signals/<symbol>')
+def get_unified_signals(symbol):
+    """API endpoint to get unified multi-layer signal analysis
+
+    Retrieves the latest unified signal aggregation including all 6 sources:
+    1. Technical Indicators (25% weight)
+    2. RL Enhancement (15% weight)
+    3. Chart Analysis (30% weight)
+    4. CrewAI Multi-Agent (15% weight)
+    5. Market Context & Cross-Asset (10% weight)
+    6. News Sentiment (5% weight)
+
+    Args:
+        symbol: Trading pair symbol
+
+    Returns:
+        JSON response with unified signal breakdown and decision
+    """
+    try:
+        import os
+        import json
+        from datetime import datetime
+
+        # Load all signal source data
+        unified_data = {
+            'symbol': symbol,
+            'timestamp': datetime.utcnow().isoformat(),
+            'unified_signal': None,
+            'signal_sources': {},
+            'weights': {
+                'technical': 25,
+                'rl': 15,
+                'chart_analysis': 30,
+                'crewai': 15,
+                'market_context': 10,
+                'news_sentiment': 5
+            }
+        }
+
+        # Get latest signal from database (includes RL if available)
+        db = get_database()
+        latest_signals = db.get_recent_signals(symbol, limit=1)
+
+        if latest_signals:
+            latest_signal = latest_signals[0]
+
+            # Check if unified signal data exists
+            if 'unified_details' in latest_signal:
+                unified_data['unified_signal'] = latest_signal['unified_details']
+
+            # Extract traditional signal data
+            signal_value = latest_signal.get('signal', 0)
+            strength = latest_signal.get('strength', 0)
+
+            # Map signal to action (signal: -1=SELL, 0=HOLD, 1=BUY)
+            if signal_value > 0:
+                action = 'BUY'
+            elif signal_value < 0:
+                action = 'SELL'
+            else:
+                action = 'HOLD'
+
+            # Convert strength (1-5) to score (0-10 scale)
+            # Strength 1 -> 2, Strength 2 -> 4, Strength 3 -> 5, Strength 4 -> 7, Strength 5 -> 10
+            score_map = {0: 5.0, 1: 2.0, 2: 4.0, 3: 5.0, 4: 7.0, 5: 10.0}
+            score = score_map.get(strength, 5.0)
+
+            # If signal is negative, invert the score (lower is more bearish)
+            if signal_value < 0:
+                score = 10 - score
+
+            unified_data['signal_sources']['technical'] = {
+                'signal': signal_value,
+                'strength': strength,
+                'action': action,
+                'score': score,
+                'confidence': min(strength * 20.0, 100.0),
+                'timestamp': latest_signal.get('timestamp'),
+                'weight': 25
+            }
+
+        # Load chart analysis
+        chart_file = 'analysis_results_SUIUSDC.json'
+        if os.path.exists(chart_file):
+            with open(chart_file, 'r') as f:
+                chart_data = json.load(f)
+                ai_analysis = chart_data.get('ai_analysis', {})
+
+                # Convert recommendation to action and score
+                rec = ai_analysis.get('recommendation', 'HOLD')
+                sentiment = ai_analysis.get('sentiment', 'Neutral')
+                conf_level = ai_analysis.get('confidence', 'Medium')
+
+                # Map recommendation to action (already in BUY/SELL/HOLD format)
+                action = rec.upper() if rec.upper() in ['BUY', 'SELL', 'HOLD'] else 'HOLD'
+
+                # Convert confidence level to numeric
+                conf_map = {'Low': 30, 'Medium': 60, 'High': 85}
+                confidence = conf_map.get(conf_level, 60)
+
+                # Convert sentiment and recommendation to score (0-10 scale)
+                # BUY recommendations get higher scores, SELL get lower scores
+                if action == 'BUY':
+                    if sentiment == 'Bullish':
+                        score = 8.0  # Strong buy
+                    else:
+                        score = 6.5  # Moderate buy
+                elif action == 'SELL':
+                    if sentiment == 'Bearish':
+                        score = 2.0  # Strong sell
+                    else:
+                        score = 3.5  # Moderate sell
+                else:  # HOLD
+                    score = 5.0  # Neutral
+
+                unified_data['signal_sources']['chart_analysis'] = {
+                    'recommendation': rec,
+                    'action': action,
+                    'score': score,
+                    'confidence': confidence,
+                    'sentiment': sentiment,
+                    'timestamp': chart_data.get('analysis_time'),
+                    'weight': 30
+                }
+
+        # Load market context
+        context_file = 'market_context.json'
+        if os.path.exists(context_file):
+            with open(context_file, 'r') as f:
+                context_data = json.load(f)
+
+                # Extract trends
+                btc_trend = context_data.get('btc', {}).get('trend', 'neutral')
+                eth_trend = context_data.get('eth', {}).get('trend', 'neutral')
+                market_trend = context_data.get('market', {}).get('trend', 'neutral')
+                fear_greed = context_data.get('market', {}).get('fear_greed_index', 50)
+
+                # Determine overall action based on market context
+                # Count bullish vs bearish signals
+                bullish_signals = sum([
+                    1 if btc_trend == 'bullish' else 0,
+                    1 if eth_trend == 'bullish' else 0,
+                    1 if market_trend == 'bullish' else 0,
+                    1 if fear_greed > 60 else 0
+                ])
+                bearish_signals = sum([
+                    1 if btc_trend == 'bearish' else 0,
+                    1 if eth_trend == 'bearish' else 0,
+                    1 if market_trend == 'bearish' else 0,
+                    1 if fear_greed < 40 else 0
+                ])
+
+                # Determine action with improved logic
+                # Require at least 2 signals in same direction for BUY/SELL
+                # This prevents single weak signals from dominating the decision
+                if bullish_signals >= 2 and bullish_signals > bearish_signals:
+                    action = 'BUY'
+                elif bearish_signals >= 2 and bearish_signals > bullish_signals:
+                    action = 'SELL'
+                else:
+                    action = 'HOLD'
+
+                # Calculate score (0-10 scale based on fear/greed index and trends)
+                # Fear/Greed contributes 50%, trends contribute 50%
+                fg_score = fear_greed / 10  # Convert 0-100 to 0-10
+
+                trend_score = 5.0  # Start neutral
+                if btc_trend == 'bullish': trend_score += 1
+                elif btc_trend == 'bearish': trend_score -= 1
+                if eth_trend == 'bullish': trend_score += 0.5
+                elif eth_trend == 'bearish': trend_score -= 0.5
+                if market_trend == 'bullish': trend_score += 0.5
+                elif market_trend == 'bearish': trend_score -= 0.5
+
+                # Weighted average
+                score = (fg_score * 0.5) + (trend_score * 0.5)
+                score = max(0, min(10, score))  # Clamp to 0-10
+
+                # Calculate confidence based on agreement between indicators
+                total_indicators = 4
+                aligned_indicators = max(bullish_signals, bearish_signals)
+                confidence = (aligned_indicators / total_indicators) * 100
+
+                unified_data['signal_sources']['market_context'] = {
+                    'btc_trend': btc_trend,
+                    'eth_trend': eth_trend,
+                    'market_trend': market_trend,
+                    'fear_greed': fear_greed,
+                    'action': action,
+                    'score': round(score, 1),
+                    'confidence': round(confidence, 0),
+                    'timestamp': context_data.get('timestamp'),
+                    'weight': 10
+                }
+
+        # Load CrewAI analysis
+        crewai_file = 'crewai_analysis.json'
+        if os.path.exists(crewai_file):
+            with open(crewai_file, 'r') as f:
+                crewai_data = json.load(f)
+
+                # Get action and confidence from consensus
+                action = crewai_data.get('consensus', {}).get('action', 'HOLD')
+                confidence = crewai_data.get('consensus', {}).get('confidence', 50)
+                circuit_breaker_state = crewai_data.get('circuit_breaker', {}).get('state', 'NORMAL')
+
+                # Convert action and confidence to score (0-10 scale)
+                # Base score on action, then adjust by confidence
+                if action == 'BUY':
+                    # BUY: score between 6-10 based on confidence
+                    # confidence 0-100, map to 6-10
+                    score = 6.0 + (confidence / 100) * 4.0
+                elif action == 'SELL':
+                    # SELL: score between 0-4 based on confidence
+                    # confidence 0-100, map inversely to 0-4
+                    score = 4.0 - (confidence / 100) * 4.0
+                else:  # HOLD
+                    # HOLD: score around 5, slightly adjusted by confidence
+                    # High confidence HOLD stays at 5, low confidence varies slightly
+                    score = 5.0 + (50 - confidence) / 100  # Ranges from 4.5 to 5.5
+
+                # Factor in circuit breaker state
+                if circuit_breaker_state == 'TRIGGERED':
+                    # If circuit breaker triggered, push score toward neutral/safe
+                    score = score * 0.7 + 5.0 * 0.3  # Blend with neutral
+
+                unified_data['signal_sources']['crewai'] = {
+                    'action': action,
+                    'score': round(score, 1),
+                    'confidence': confidence,
+                    'circuit_breaker_state': circuit_breaker_state,
+                    'timestamp': crewai_data.get('timestamp'),
+                    'weight': 15
+                }
+
+        # Load news sentiment
+        news_file = 'news_sentiment.json'
+        if os.path.exists(news_file):
+            with open(news_file, 'r') as f:
+                news_data = json.load(f)
+
+                # Map sentiment to action
+                sentiment = news_data.get('sentiment', 'Neutral')
+                if sentiment.lower() in ['bullish', 'positive']:
+                    action = 'BUY'
+                elif sentiment.lower() in ['bearish', 'negative']:
+                    action = 'SELL'
+                else:
+                    action = 'HOLD'
+
+                # Convert sentiment_score to 0-10 scale for consistency
+                # sentiment_score is typically -1 to 1, convert to 0-10 scale
+                raw_score = news_data.get('sentiment_score', 0)
+                # Map: -1 (bearish) -> 0, 0 (neutral) -> 5, 1 (bullish) -> 10
+                score = (raw_score + 1) * 5
+
+                # Get confidence (1-10 scale)
+                confidence = news_data.get('confidence', 0) * 10 if news_data.get('confidence', 0) <= 1 else news_data.get('confidence', 0)
+
+                unified_data['signal_sources']['news_sentiment'] = {
+                    'sentiment': sentiment,
+                    'action': action,  # Add action field for frontend
+                    'score': score,
+                    'confidence': confidence,
+                    'article_count': news_data.get('article_count', 0),
+                    'timestamp': news_data.get('timestamp'),
+                    'weight': 5
+                }
+
+        # Add RL signal if available
+        if 'unified_details' in latest_signal and latest_signal['unified_details']:
+            unified_details = latest_signal['unified_details']
+            unified_data['unified_signal'] = {
+                'action': unified_details.get('signal', 'HOLD'),
+                'weighted_score': unified_details.get('strength', 0),
+                'confidence': unified_details.get('confidence', 0),
+                'breakdown': unified_details.get('breakdown', {})
+            }
+
+            # Extract individual scores from breakdown if available
+            breakdown = unified_details.get('breakdown', {})
+            if 'rl' in breakdown:
+                unified_data['signal_sources']['rl'] = {
+                    'action': breakdown['rl'].get('action', 'HOLD'),
+                    'score': breakdown['rl'].get('score', 0),
+                    'confidence': breakdown['rl'].get('confidence', 0),
+                    'weight': 15
+                }
+
+        # If RL source not populated from breakdown, add placeholder
+        if 'rl' not in unified_data['signal_sources']:
+            unified_data['signal_sources']['rl'] = {
+                'action': 'HOLD',
+                'score': 5.0,
+                'confidence': 0,
+                'weight': 15
+            }
+
+        # Calculate unified decision by aggregating all signal sources
+        # Only calculate if we don't already have unified_signal from database
+        if not unified_data['unified_signal']:
+            signal_sources = unified_data['signal_sources']
+
+            # Calculate weighted score (0-10 scale)
+            total_weight = 0
+            weighted_score_sum = 0
+            weighted_confidence_sum = 0
+
+            # Count actions for voting
+            buy_weight = 0
+            sell_weight = 0
+            hold_weight = 0
+
+            for source_name, source_data in signal_sources.items():
+                if 'score' in source_data and 'weight' in source_data:
+                    weight = source_data['weight']
+                    score = source_data['score']
+                    confidence = source_data.get('confidence', 50)
+                    action = source_data.get('action', 'HOLD')
+
+                    # Accumulate weighted values
+                    weighted_score_sum += score * (weight / 100)
+                    weighted_confidence_sum += confidence * (weight / 100)
+                    total_weight += weight
+
+                    # Vote on action based on weight
+                    if action == 'BUY':
+                        buy_weight += weight
+                    elif action == 'SELL':
+                        sell_weight += weight
+                    else:  # HOLD
+                        hold_weight += weight
+
+            # Determine overall action based on weighted voting
+            if buy_weight > sell_weight and buy_weight > hold_weight:
+                unified_action = 'BUY'
+            elif sell_weight > buy_weight and sell_weight > hold_weight:
+                unified_action = 'SELL'
+            else:
+                unified_action = 'HOLD'
+
+            # Calculate final weighted score and confidence
+            final_score = weighted_score_sum if total_weight > 0 else 5.0
+            final_confidence = weighted_confidence_sum if total_weight > 0 else 0
+
+            # Set the unified signal
+            unified_data['unified_signal'] = {
+                'action': unified_action,
+                'weighted_score': round(final_score, 1),
+                'confidence': round(final_confidence, 1),
+                'breakdown': {
+                    'buy_weight': buy_weight,
+                    'sell_weight': sell_weight,
+                    'hold_weight': hold_weight,
+                    'total_weight': total_weight
+                }
+            }
+
+        return jsonify({
+            'success': True,
+            'data': unified_data
+        })
+
+    except Exception as e:
+        logger.error(f"Error getting unified signals: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
@@ -1019,8 +1389,8 @@ def get_ai_agent_logs():
     try:
         agent_logs = []
 
-        # Read from web_dashboard.log which contains CrewAI integration logs
-        log_file = 'web_dashboard.log'
+        # Read from trading_bot.log which contains CrewAI integration logs
+        log_file = 'logs/trading_bot.log'
 
         if os.path.exists(log_file):
             try:
@@ -1480,12 +1850,15 @@ def get_news():
         # Get articles for current page
         paginated_articles = all_articles[start_idx:end_idx]
         
-        # Perform sentiment analysis with aggressive caching (only once per hour)
+        # Perform sentiment analysis with aggressive caching (only once per 2-hour block)
         sentiment_data = None
-        sentiment_cache_key = f"sentiment_{datetime.now().strftime('%Y%m%d_%H')}"
-        
+        # Calculate 2-hour block: 0-1, 2-3, 4-5, etc.
+        current_hour = datetime.now().hour
+        hour_block = (current_hour // 2) * 2  # Round down to nearest even hour
+        sentiment_cache_key = f"sentiment_{datetime.now().strftime('%Y%m%d')}_{hour_block:02d}"
+
         if page == 1:  # Only analyze sentiment on the first page
-            # Check if we have cached sentiment for this hour
+            # Check if we have cached sentiment for this 2-hour block
             import os
             sentiment_cache_file = f"/tmp/{sentiment_cache_key}.json"
             
@@ -1501,12 +1874,12 @@ def get_news():
             if not sentiment_data and top_20_titles:
                 sentiment_data = analyze_market_sentiment(top_20_titles)
                 logger.info(f"Market sentiment analysis: {sentiment_data['sentiment']} (confidence: {sentiment_data['confidence']}/10)")
-                
-                # Cache the result for 1 hour
+
+                # Cache the result for 2 hours
                 try:
                     with open(sentiment_cache_file, 'w') as f:
                         json.dump(sentiment_data, f)
-                    logger.info("Cached sentiment analysis for 1 hour")
+                    logger.info("Cached sentiment analysis for 2 hours")
                 except:
                     pass
                     
@@ -2027,6 +2400,78 @@ def force_circuit_breaker_check():
 
     except Exception as e:
         logger.error(f"Error forcing circuit breaker check: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+# ============================================================================
+# HyperDash Trader Monitoring API Endpoint
+# ============================================================================
+
+@app.route('/api/hyperdash/trader/<trader_address>')
+def get_hyperdash_trader(trader_address):
+    """API endpoint to get HyperDash trader open orders
+
+    Fetches open orders for a specific trader from HyperDash.
+    Note: HyperDash uses Cloudflare protection, so this endpoint
+    requires a proper scraping solution (Selenium/Playwright) or API access.
+
+    Args:
+        trader_address: Ethereum address of the trader (e.g., 0xb317d2bc2d3d2df5fa441b5bae0ab9d8b07283ae)
+
+    Returns:
+        JSON response with trader's open orders data
+    """
+    try:
+        # TODO: Implement proper web scraping with Cloudflare bypass
+        # For now, return placeholder data structure
+        # You'll need to install: pip install selenium or playwright
+
+        trader_data = {
+            'trader_address': trader_address,
+            'status': 'placeholder',
+            'message': 'HyperDash scraping requires Cloudflare bypass (Selenium/Playwright)',
+            'open_orders': [
+                {
+                    'symbol': 'BTC/USDT',
+                    'side': 'LONG',
+                    'size': 0.5,
+                    'entry_price': 67500.00,
+                    'current_price': 67800.00,
+                    'pnl': 150.00,
+                    'pnl_percentage': 0.44,
+                    'leverage': 10,
+                    'margin': 3375.00,
+                    'liquidation_price': 60750.00,
+                    'timestamp': '2025-10-14T12:00:00Z'
+                },
+                {
+                    'symbol': 'ETH/USDT',
+                    'side': 'SHORT',
+                    'size': 5.0,
+                    'entry_price': 3500.00,
+                    'current_price': 3480.00,
+                    'pnl': 100.00,
+                    'pnl_percentage': 0.57,
+                    'leverage': 10,
+                    'margin': 1750.00,
+                    'liquidation_price': 3850.00,
+                    'timestamp': '2025-10-14T10:30:00Z'
+                }
+            ],
+            'total_pnl': 250.00,
+            'total_margin': 5125.00,
+            'account_value': 5375.00
+        }
+
+        return jsonify({
+            'success': True,
+            'data': trader_data
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching HyperDash trader data: {e}")
         return jsonify({
             'success': False,
             'error': str(e)

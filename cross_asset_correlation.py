@@ -55,7 +55,7 @@ class CrossAssetAnalyzer:
     """
     
     def __init__(self):
-        self.cache_duration = 300  # 5 minutes cache
+        self.cache_duration = 14400  # 4 hours cache (increased to avoid rate limits)
         self.last_update = None
         self.cached_context = None
         self.price_history = {}
@@ -172,9 +172,9 @@ class CrossAssetAnalyzer:
                 'include_24hr_change': 'true',
                 'include_24hr_vol': 'true'
             }
-            
+
             response = requests.get(url, params=params, timeout=10)
-            
+
             if response.status_code == 200:
                 data = response.json()
                 if coin_id in data:
@@ -183,12 +183,14 @@ class CrossAssetAnalyzer:
                         'price_change_percentage_24h': data[coin_id].get('usd_24h_change', 0),
                         'volume_24h': data[coin_id].get('usd_24h_vol', 0)
                     }
+            elif response.status_code == 429:
+                logger.warning(f"CoinGecko API rate limit exceeded (429) - using cached data")
             else:
                 logger.warning(f"CoinGecko API returned {response.status_code}")
-                
+
         except Exception as e:
             logger.error(f"Error fetching {coin_id} data: {e}")
-            
+
         return None
     
     def _fetch_btc_dominance(self) -> float:
@@ -196,15 +198,17 @@ class CrossAssetAnalyzer:
         try:
             url = "https://api.coingecko.com/api/v3/global"
             response = requests.get(url, timeout=10)
-            
+
             if response.status_code == 200:
                 data = response.json()
                 dominance = data['data']['market_cap_percentage'].get('btc', 50.0)
                 return float(dominance)
-                
+            elif response.status_code == 429:
+                logger.warning(f"CoinGecko API rate limit exceeded (429) for BTC dominance - using fallback")
+
         except Exception as e:
             logger.error(f"Error fetching BTC dominance: {e}")
-            
+
         return 50.0  # Default fallback
     
     def _fetch_fear_greed_index(self) -> int:

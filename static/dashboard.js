@@ -38,8 +38,20 @@ document.addEventListener('DOMContentLoaded', function() {
     // Load market context data
     loadMarketContext();
 
+    // Load unified signals
+    loadUnifiedSignals();
+
+    // Load HyperDash trader data
+    loadHyperDashTrader();
+
     // Auto-refresh market context every 5 minutes
     setInterval(loadMarketContext, 300000);
+
+    // Auto-refresh unified signals every 30 seconds
+    setInterval(loadUnifiedSignals, 30000);
+
+    // Auto-refresh HyperDash trader data every 60 seconds
+    setInterval(loadHyperDashTrader, 60000);
 
     // Set up AI agent logging
     setupAgentLogsEventListeners();
@@ -1706,5 +1718,276 @@ function setupAgentLogsEventListeners() {
 
     // Initial load
     loadAIAgentLogs();
+}
+
+// ============================================================================
+// Unified Signal Aggregation Functions
+// ============================================================================
+
+async function loadUnifiedSignals() {
+    try {
+        const response = await fetch(`/api/unified-signals/${currentSymbol}`);
+        const data = await response.json();
+
+        if (data.success && data.data) {
+            displayUnifiedSignals(data.data);
+        } else {
+            console.warn('Unified signals not available:', data.message);
+            showUnifiedSignalsError('Unified signals data not available');
+        }
+    } catch (error) {
+        console.error('Error loading unified signals:', error);
+        showUnifiedSignalsError('Error loading unified signals');
+    }
+}
+
+function displayUnifiedSignals(data) {
+    // Update unified decision
+    const decision = data.unified_signal?.action || 'N/A';
+    const decisionEl = document.getElementById('unifiedDecision');
+    decisionEl.textContent = decision;
+
+    // Color code decision
+    if (decision === 'BUY') {
+        decisionEl.className = 'text-4xl font-bold text-green-600';
+    } else if (decision === 'SELL') {
+        decisionEl.className = 'text-4xl font-bold text-red-600';
+    } else {
+        decisionEl.className = 'text-4xl font-bold text-gray-600';
+    }
+
+    // Update strength
+    const strength = data.unified_signal?.weighted_score || 0;
+    document.getElementById('unifiedStrength').textContent = strength.toFixed(1);
+
+    // Update confidence
+    const confidence = data.unified_signal?.confidence || 0;
+    document.getElementById('unifiedConfidence').textContent = `${confidence.toFixed(1)}%`;
+
+    // Update signal sources
+    updateSignalSource('technical', data.signal_sources.technical, data.weights.technical);
+    updateSignalSource('rl', data.signal_sources.rl, data.weights.rl);
+    updateSignalSource('chart_analysis', data.signal_sources.chart_analysis, data.weights.chart_analysis);
+    updateSignalSource('crewai', data.signal_sources.crewai, data.weights.crewai);
+    updateSignalSource('market_context', data.signal_sources.market_context, data.weights.market_context);
+    updateSignalSource('news_sentiment', data.signal_sources.news_sentiment, data.weights.news_sentiment);
+
+    // Update signal details
+    updateSignalDetails(data);
+}
+
+function updateSignalSource(sourceKey, sourceData, weight) {
+    if (!sourceData) return;
+
+    const signalMap = {
+        'technical': { signal: 'technicalSignal', bar: 'technicalBar', score: 'technicalScore' },
+        'rl': { signal: 'rlSignalDisplay', bar: 'rlBar', score: 'rlScore' },
+        'chart_analysis': { signal: 'chartSignal', bar: 'chartBar', score: 'chartScore' },
+        'crewai': { signal: 'crewaiSignal', bar: 'crewaiBar', score: 'crewaiScore' },
+        'market_context': { signal: 'marketContextSignal', bar: 'marketContextBar', score: 'marketContextScore' },
+        'news_sentiment': { signal: 'newsSignal', bar: 'newsBar', score: 'newsScore' }
+    };
+
+    const ids = signalMap[sourceKey];
+    if (!ids) return;
+
+    // Update signal action
+    const signalEl = document.getElementById(ids.signal);
+    if (signalEl) {
+        const action = sourceData.action || 'N/A';
+        signalEl.textContent = action;
+
+        // Color code
+        if (action === 'BUY') {
+            signalEl.className = 'text-sm font-bold text-green-600';
+        } else if (action === 'SELL') {
+            signalEl.className = 'text-sm font-bold text-red-600';
+        } else {
+            signalEl.className = 'text-sm font-bold text-gray-600';
+        }
+    }
+
+    // Update score and bar
+    const score = sourceData.score || 0;
+    const confidence = sourceData.confidence || 0;
+
+    const scoreEl = document.getElementById(ids.score);
+    if (scoreEl) {
+        scoreEl.textContent = `${score.toFixed(1)}/10 (${confidence.toFixed(0)}%)`;
+    }
+
+    // Update progress bar (0-10 scale to 0-100%)
+    const barEl = document.getElementById(ids.bar);
+    if (barEl) {
+        const percentage = (score / 10) * 100;
+        barEl.style.width = `${percentage}%`;
+
+        // Color based on score
+        if (score >= 6.5) {
+            barEl.className = 'bg-green-500 h-2 rounded-full transition-all duration-500';
+        } else if (score <= 3.5) {
+            barEl.className = 'bg-red-500 h-2 rounded-full transition-all duration-500';
+        } else {
+            barEl.className = 'bg-yellow-500 h-2 rounded-full transition-all duration-500';
+        }
+    }
+}
+
+function updateSignalDetails(data) {
+    // Calculate signal age
+    const timestamp = new Date(data.timestamp);
+    const now = new Date();
+    const ageSeconds = Math.floor((now - timestamp) / 1000);
+
+    let ageText;
+    if (ageSeconds < 60) {
+        ageText = `${ageSeconds}s ago`;
+    } else if (ageSeconds < 3600) {
+        ageText = `${Math.floor(ageSeconds / 60)}m ago`;
+    } else {
+        ageText = `${Math.floor(ageSeconds / 3600)}h ago`;
+    }
+
+    document.getElementById('signalAge').textContent = ageText;
+
+    // Calculate data quality based on availability
+    let availableSources = 0;
+    let totalSources = 6;
+
+    if (data.signal_sources.technical && data.signal_sources.technical.confidence > 0) availableSources++;
+    if (data.signal_sources.rl && data.signal_sources.rl.confidence > 0) availableSources++;
+    if (data.signal_sources.chart_analysis && data.signal_sources.chart_analysis.confidence > 0) availableSources++;
+    if (data.signal_sources.crewai && data.signal_sources.crewai.confidence > 0) availableSources++;
+    if (data.signal_sources.market_context && data.signal_sources.market_context.confidence > 0) availableSources++;
+    if (data.signal_sources.news_sentiment && data.signal_sources.news_sentiment.confidence > 0) availableSources++;
+
+    const quality = ((availableSources / totalSources) * 100).toFixed(0);
+    document.getElementById('dataQuality').textContent = `${quality}% (${availableSources}/${totalSources})`;
+
+    // Update timestamp
+    const timestampEl = document.getElementById('unifiedTimestamp');
+    timestampEl.textContent = formatTime(data.timestamp);
+}
+
+function showUnifiedSignalsError(message) {
+    // Set all displays to error state
+    document.getElementById('unifiedDecision').textContent = 'ERROR';
+    document.getElementById('unifiedStrength').textContent = '-';
+    document.getElementById('unifiedConfidence').textContent = '-';
+
+    console.error(message);
+}
+
+// ============================================================================
+// HyperDash Trader Monitoring Functions
+// ============================================================================
+
+async function loadHyperDashTrader() {
+    try {
+        const traderAddress = '0xb317d2bc2d3d2df5fa441b5bae0ab9d8b07283ae';
+        const response = await fetch(`/api/hyperdash/trader/${traderAddress}`);
+        const result = await response.json();
+
+        if (result.success && result.data) {
+            displayHyperDashTrader(result.data);
+        } else {
+            showHyperDashError('Failed to load trader data');
+        }
+    } catch (error) {
+        console.error('Error loading HyperDash trader data:', error);
+        showHyperDashError('Error loading trader data');
+    }
+}
+
+function displayHyperDashTrader(data) {
+    // Update summary cards
+    document.getElementById('traderTotalPnl').textContent =
+        data.total_pnl !== undefined ? `$${data.total_pnl.toFixed(2)}` : '-';
+
+    document.getElementById('traderTotalMargin').textContent =
+        data.total_margin !== undefined ? `$${data.total_margin.toFixed(2)}` : '-';
+
+    document.getElementById('traderAccountValue').textContent =
+        data.account_value !== undefined ? `$${data.account_value.toFixed(2)}` : '-';
+
+    // Update total PnL color
+    const pnlEl = document.getElementById('traderTotalPnl');
+    if (data.total_pnl >= 0) {
+        pnlEl.parentElement.className = 'bg-green-50 p-3 rounded text-center';
+        pnlEl.className = 'text-lg font-bold text-green-600';
+    } else {
+        pnlEl.parentElement.className = 'bg-red-50 p-3 rounded text-center';
+        pnlEl.className = 'text-lg font-bold text-red-600';
+    }
+
+    // Update open orders table
+    const tbody = document.getElementById('hyperdashOrdersTable');
+
+    if (data.open_orders && data.open_orders.length > 0) {
+        tbody.innerHTML = data.open_orders.map(order => {
+            const sideClass = order.side === 'LONG' ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold';
+            const pnlClass = order.pnl >= 0 ? 'text-green-600 font-semibold' : 'text-red-600 font-semibold';
+            const pnlPercentClass = order.pnl_percentage >= 0 ? 'text-green-600' : 'text-red-600';
+
+            return `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2 text-xs font-semibold">${order.symbol}</td>
+                    <td class="px-3 py-2 text-xs ${sideClass}">${order.side}</td>
+                    <td class="px-3 py-2 text-xs text-right">${order.size.toFixed(4)}</td>
+                    <td class="px-3 py-2 text-xs text-right">$${order.entry_price.toFixed(2)}</td>
+                    <td class="px-3 py-2 text-xs text-right">$${order.current_price.toFixed(2)}</td>
+                    <td class="px-3 py-2 text-xs text-right ${pnlClass}">$${order.pnl.toFixed(2)}</td>
+                    <td class="px-3 py-2 text-xs text-right ${pnlPercentClass}">${order.pnl_percentage >= 0 ? '+' : ''}${order.pnl_percentage.toFixed(2)}%</td>
+                    <td class="px-3 py-2 text-xs text-right">${order.leverage}x</td>
+                    <td class="px-3 py-2 text-xs text-right text-red-600">$${order.liquidation_price.toFixed(2)}</td>
+                </tr>
+            `;
+        }).join('');
+    } else {
+        tbody.innerHTML = '<tr><td colspan="9" class="px-3 py-8 text-center text-gray-500 text-sm">No open positions</td></tr>';
+    }
+
+    // Update status
+    const statusEl = document.getElementById('hyperdashStatus');
+    if (data.status === 'placeholder') {
+        statusEl.textContent = `Status: ⚠️ ${data.message}`;
+        statusEl.className = 'mt-3 flex justify-between items-center text-xs text-yellow-600';
+    } else {
+        statusEl.textContent = `Status: ✅ Live data (${data.open_orders.length} open orders)`;
+        statusEl.className = 'mt-3 flex justify-between items-center text-xs text-green-600';
+    }
+}
+
+function showHyperDashError(message) {
+    const tbody = document.getElementById('hyperdashOrdersTable');
+    tbody.innerHTML = `<tr><td colspan="9" class="px-3 py-8 text-center text-red-500 text-sm">${message}</td></tr>`;
+
+    document.getElementById('hyperdashStatus').textContent = `Status: ❌ ${message}`;
+    document.getElementById('hyperdashStatus').className = 'mt-3 flex justify-between items-center text-xs text-red-600';
+}
+
+function switchHyperDashView(view) {
+    const tableView = document.getElementById('hyperdashTableView');
+    const iframeView = document.getElementById('hyperdashIframeView');
+    const tabTable = document.getElementById('tabTableView');
+    const tabIframe = document.getElementById('tabIframeView');
+
+    if (view === 'table') {
+        // Show table view, hide iframe view
+        tableView.style.display = 'block';
+        iframeView.style.display = 'none';
+
+        // Update tab styles
+        tabTable.className = 'px-3 py-1 text-sm font-medium rounded-md bg-white shadow';
+        tabIframe.className = 'px-3 py-1 text-sm font-medium rounded-md text-gray-600';
+    } else if (view === 'iframe') {
+        // Show iframe view, hide table view
+        tableView.style.display = 'none';
+        iframeView.style.display = 'block';
+
+        // Update tab styles
+        tabTable.className = 'px-3 py-1 text-sm font-medium rounded-md text-gray-600';
+        tabIframe.className = 'px-3 py-1 text-sm font-medium rounded-md bg-white shadow';
+    }
 }
 

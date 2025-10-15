@@ -1,0 +1,1746 @@
+/* ============================================================================
+   Enhanced Dashboard CSS - Tailwind Design System
+   ============================================================================ */
+
+/* Design Tokens - Custom Variables */
+:root {
+    /* Colors */
+    --color-primary: #3b82f6;
+    --color-primary-dark: #2563eb;
+    --color-success: #10b981;
+    --color-danger: #ef4444;
+    --color-warning: #f59e0b;
+    --color-info: #06b6d4;
+
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+    /* Transitions */
+    --transition-fast: 150ms ease-in-out;
+    --transition-base: 200ms ease-in-out;
+    --transition-slow: 300ms ease-in-out;
+
+    /* Border Radius */
+    --radius-sm: 0.375rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+}
+
+/* ============================================================================
+   Base Component Classes
+   ============================================================================ */
+
+/* Enhanced Card Component */
+.card {
+    @apply bg-white rounded-lg shadow-md p-4 sm:p-6 transition-all duration-200;
+    @apply hover:shadow-lg;
+}
+
+.card-header {
+    @apply flex justify-between items-center mb-4 pb-3 border-b border-gray-200;
+}
+
+.card-title {
+    @apply text-lg font-semibold text-gray-900 flex items-center gap-2;
+}
+
+.card-body {
+    @apply space-y-4;
+}
+
+.card-footer {
+    @apply mt-4 pt-3 border-t border-gray-200 text-xs text-gray-500;
+}
+
+/* Enhanced Metrics Component */
+.metric {
+    @apply text-center p-3 sm:p-4 rounded-lg transition-all duration-200;
+    @apply hover:scale-105 cursor-default;
+}
+
+.metric-value {
+    @apply text-2xl sm:text-3xl font-bold mb-1;
+}
+
+.metric-label {
+    @apply text-sm text-gray-600;
+}
+
+.metric-positive {
+    @apply bg-gradient-to-br from-green-50 to-green-100 text-green-800;
+    @apply border border-green-200;
+}
+
+.metric-negative {
+    @apply bg-gradient-to-br from-red-50 to-red-100 text-red-800;
+    @apply border border-red-200;
+}
+
+.metric-neutral {
+    @apply bg-gradient-to-br from-blue-50 to-blue-100 text-blue-800;
+    @apply border border-blue-200;
+}
+
+.metric-warning {
+    @apply bg-gradient-to-br from-yellow-50 to-yellow-100 text-yellow-800;
+    @apply border border-yellow-200;
+}
+
+/* ============================================================================
+   Button Components
+   ============================================================================ */
+
+.btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-offset-2;
+    @apply active:scale-95;
+}
+
+.btn-primary {
+    @apply bg-blue-500 text-white hover:bg-blue-600;
+    @apply focus:ring-blue-500;
+}
+
+.btn-success {
+    @apply bg-green-500 text-white hover:bg-green-600;
+    @apply focus:ring-green-500;
+}
+
+.btn-danger {
+    @apply bg-red-500 text-white hover:bg-red-600;
+    @apply focus:ring-red-500;
+}
+
+.btn-warning {
+    @apply bg-yellow-500 text-white hover:bg-yellow-600;
+    @apply focus:ring-yellow-500;
+}
+
+.btn-secondary {
+    @apply bg-gray-200 text-gray-700 hover:bg-gray-300;
+    @apply focus:ring-gray-400;
+}
+
+.btn-sm {
+    @apply px-3 py-1 text-sm;
+}
+
+.btn-lg {
+    @apply px-6 py-3 text-lg;
+}
+
+/* ============================================================================
+   Badge Components
+   ============================================================================ */
+
+.badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply transition-all duration-200;
+}
+
+.badge-success {
+    @apply bg-green-100 text-green-800;
+}
+
+.badge-danger {
+    @apply bg-red-100 text-red-800;
+}
+
+.badge-warning {
+    @apply bg-yellow-100 text-yellow-800;
+}
+
+.badge-info {
+    @apply bg-blue-100 text-blue-800;
+}
+
+.badge-pulse {
+    @apply animate-pulse;
+}
+
+/* ============================================================================
+   Signal & Status Indicators
+   ============================================================================ */
+
+.signal-indicator {
+    @apply inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-semibold;
+    @apply transition-all duration-200 hover:scale-105;
+}
+
+.signal-buy {
+    @apply bg-green-500 text-white shadow-md;
+    @apply hover:bg-green-600 hover:shadow-lg;
+}
+
+.signal-sell {
+    @apply bg-red-500 text-white shadow-md;
+    @apply hover:bg-red-600 hover:shadow-lg;
+}
+
+.signal-hold {
+    @apply bg-gray-500 text-white shadow-md;
+    @apply hover:bg-gray-600 hover:shadow-lg;
+}
+
+.status-indicator {
+    @apply flex items-center gap-2;
+}
+
+.status-dot {
+    @apply w-2 h-2 rounded-full;
+}
+
+.status-dot-green {
+    @apply bg-green-500 animate-pulse;
+}
+
+.status-dot-red {
+    @apply bg-red-500 animate-pulse;
+}
+
+.status-dot-yellow {
+    @apply bg-yellow-500 animate-pulse;
+}
+
+/* ============================================================================
+   Loading States & Skeletons
+   ============================================================================ */
+
+.skeleton {
+    @apply bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200;
+    @apply bg-[length:200%_100%] animate-shimmer rounded;
+}
+
+.skeleton-text {
+    @apply h-4 w-full skeleton mb-2;
+}
+
+.skeleton-title {
+    @apply h-6 w-3/4 skeleton mb-3;
+}
+
+.skeleton-circle {
+    @apply w-12 h-12 rounded-full skeleton;
+}
+
+.skeleton-card {
+    @apply card animate-pulse;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.animate-shimmer {
+    animation: shimmer 2s ease-in-out infinite;
+}
+
+.loading-spinner {
+    @apply inline-block w-5 h-5 border-2 border-current border-t-transparent rounded-full;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ============================================================================
+   Table Components
+   ============================================================================ */
+
+.table-container {
+    @apply overflow-x-auto rounded-lg border border-gray-200;
+}
+
+.table-enhanced {
+    @apply min-w-full divide-y divide-gray-200;
+}
+
+.table-enhanced thead {
+    @apply bg-gradient-to-r from-gray-50 to-gray-100;
+}
+
+.table-enhanced th {
+    @apply px-3 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider;
+}
+
+.table-enhanced tbody {
+    @apply bg-white divide-y divide-gray-200;
+}
+
+.table-enhanced tr {
+    @apply transition-colors duration-150 hover:bg-gray-50;
+}
+
+.table-enhanced td {
+    @apply px-3 py-3 text-sm text-gray-900;
+}
+
+/* ============================================================================
+   Progress Bars
+   ============================================================================ */
+
+.progress-bar {
+    @apply w-full bg-gray-200 rounded-full h-2 overflow-hidden;
+}
+
+.progress-bar-fill {
+    @apply h-full rounded-full transition-all duration-500 ease-out;
+    @apply bg-gradient-to-r from-blue-500 to-blue-600;
+}
+
+.progress-bar-success {
+    @apply bg-gradient-to-r from-green-500 to-green-600;
+}
+
+.progress-bar-danger {
+    @apply bg-gradient-to-r from-red-500 to-red-600;
+}
+
+.progress-bar-warning {
+    @apply bg-gradient-to-r from-yellow-500 to-yellow-600;
+}
+
+/* ============================================================================
+   Tooltips & Popovers
+   ============================================================================ */
+
+.tooltip {
+    @apply absolute z-50 px-2 py-1 text-xs font-medium text-white bg-gray-900 rounded shadow-lg;
+    @apply pointer-events-none opacity-0 transition-opacity duration-200;
+}
+
+.tooltip-arrow {
+    @apply absolute w-2 h-2 bg-gray-900 transform rotate-45;
+}
+
+/* ============================================================================
+   Animations & Micro-interactions
+   ============================================================================ */
+
+.fade-in {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.bounce-in {
+    animation: bounceIn 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes bounceIn {
+    0% {
+        opacity: 0;
+        transform: scale(0.3);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1.05);
+    }
+    70% {
+        transform: scale(0.9);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.pulse-slow {
+    animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ============================================================================
+   Focus States & Accessibility
+   ============================================================================ */
+
+.focus-visible {
+    @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2;
+}
+
+.sr-only {
+    @apply absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0;
+    clip: rect(0, 0, 0, 0);
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .card {
+        @apply border-2 border-gray-900;
+    }
+
+    .btn {
+        @apply border-2 border-current;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* ============================================================================
+   Mobile Optimizations
+   ============================================================================ */
+
+@media (max-width: 640px) {
+    .card {
+        @apply p-3;
+    }
+
+    .metric {
+        @apply p-2;
+    }
+
+    .btn {
+        @apply px-3 py-1.5 text-sm;
+    }
+
+    .card-title {
+        @apply text-base;
+    }
+}
+
+/* ============================================================================
+   Dark Mode Support (Optional - for future enhancement)
+   ============================================================================ */
+
+@media (prefers-color-scheme: dark) {
+    /* Uncomment when implementing dark mode
+    :root {
+        --color-bg: #1f2937;
+        --color-card: #374151;
+        --color-text: #f9fafb;
+    }
+    */
+}
+
+/* ============================================================================
+   Print Styles
+   ============================================================================ */
+
+@media print {
+    .no-print {
+        @apply hidden;
+    }
+
+    .card {
+        @apply shadow-none border border-gray-300;
+    }
+
+    .table-enhanced {
+        @apply text-xs;
+    }
+}
+
+/* ============================================================================
+   Custom Scrollbar (WebKit browsers)
+   ============================================================================ */
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    @apply bg-gray-100 rounded;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-gray-400 rounded hover:bg-gray-500;
+}
+
+/* ============================================================================
+   Grid Layouts
+   ============================================================================ */
+
+.grid-auto-fit {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.grid-auto-fill {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+}
+
+/* ============================================================================
+   Chart Analysis Section - Enhanced Styling
+   ============================================================================ */
+
+#chartAnalysisSection {
+    @apply relative;
+}
+
+/* Chart Image Container with Hover Effects */
+#chartImage {
+    @apply transition-all duration-300 ease-in-out;
+    @apply hover:shadow-2xl hover:scale-[1.02];
+    @apply cursor-pointer;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Chart Loading State */
+#chartLoading {
+    @apply bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50;
+    @apply border-2 border-dashed border-gray-300;
+}
+
+/* Analysis Results Grid Enhancement */
+#analysisResults .metric {
+    @apply backdrop-blur-sm;
+    @apply shadow-md hover:shadow-xl;
+    @apply transform transition-all duration-300;
+}
+
+/* Recommendation Card Dynamic Colors */
+#recommendationCard.metric-buy {
+    @apply bg-gradient-to-br from-green-100 to-green-200 text-green-900;
+    @apply border-2 border-green-300 shadow-green-200;
+}
+
+#recommendationCard.metric-sell {
+    @apply bg-gradient-to-br from-red-100 to-red-200 text-red-900;
+    @apply border-2 border-red-300 shadow-red-200;
+}
+
+#recommendationCard.metric-hold {
+    @apply bg-gradient-to-br from-gray-100 to-gray-200 text-gray-900;
+    @apply border-2 border-gray-300 shadow-gray-200;
+}
+
+/* Confidence Level Indicator */
+#confidence {
+    @apply font-mono;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Price Display with Pulse Effect */
+#currentPrice {
+    @apply relative;
+}
+
+#currentPrice::before {
+    content: '';
+    @apply absolute inset-0 bg-blue-500 opacity-20 rounded-lg;
+    animation: price-pulse 2s ease-in-out infinite;
+}
+
+@keyframes price-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.05);
+        opacity: 0.2;
+    }
+}
+
+/* Price Change Indicator */
+#priceChange {
+    @apply font-bold transition-all duration-300;
+}
+
+#priceChange.positive {
+    @apply text-green-600;
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
+#priceChange.negative {
+    @apply text-red-600;
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+/* Section Headers with Icons */
+#observationsSection h4,
+#riskSection h4,
+#reasoningSection h4 {
+    @apply flex items-center gap-2 text-gray-800;
+    @apply border-l-4 border-blue-500 pl-3;
+    @apply bg-gradient-to-r from-blue-50 to-transparent;
+    @apply py-2 rounded-r;
+}
+
+/* Key Observations List */
+#observations li {
+    @apply relative pl-6 py-1;
+    @apply transition-all duration-200 hover:bg-blue-50 rounded;
+}
+
+#observations li::before {
+    content: '📌';
+    @apply absolute left-0 top-1;
+}
+
+/* Risk Factors List with Warning Style */
+#riskFactors li {
+    @apply relative pl-6 py-1;
+    @apply transition-all duration-200 hover:bg-orange-50 rounded;
+    @apply text-orange-900;
+}
+
+#riskFactors li::before {
+    content: '⚠️';
+    @apply absolute left-0 top-1;
+}
+
+#riskSection {
+    @apply bg-gradient-to-r from-orange-50 to-red-50 p-4 rounded-lg;
+    @apply border-l-4 border-orange-500;
+}
+
+/* AI Reasoning Box */
+#reasoning {
+    @apply p-4 rounded-lg;
+    @apply bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50;
+    @apply border border-purple-200;
+    @apply shadow-inner;
+    @apply italic leading-relaxed;
+}
+
+#reasoningSection {
+    @apply bg-gradient-to-r from-purple-50 to-blue-50 p-4 rounded-lg;
+    @apply border-l-4 border-purple-500;
+}
+
+/* Analysis Timestamp */
+#analysisTimestamp {
+    @apply flex items-center justify-center gap-2;
+    @apply bg-gray-100 rounded-full px-4 py-2;
+    @apply text-gray-600 font-medium;
+}
+
+#analysisTimestamp::before {
+    content: '🕐';
+}
+
+/* Chart Analysis Card Enhancement */
+.chart-analysis-card {
+    @apply bg-gradient-to-br from-white via-blue-50 to-purple-50;
+    @apply border-2 border-blue-100;
+    @apply shadow-xl;
+    @apply relative overflow-hidden;
+}
+
+.chart-analysis-card::before {
+    content: '';
+    @apply absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-blue-200/20 to-purple-200/20;
+    @apply rounded-full blur-3xl;
+    @apply pointer-events-none;
+    transform: translate(30%, -30%);
+}
+
+.chart-analysis-card .card-header {
+    @apply relative z-10;
+    @apply bg-white/80 backdrop-blur-sm;
+    @apply border-b-2 border-blue-200;
+}
+
+/* Metric Value Animation on Update */
+@keyframes value-update {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+        color: var(--color-primary);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.metric-value.updating {
+    animation: value-update 0.5s ease-in-out;
+}
+
+/* Responsive Chart Analysis */
+@media (max-width: 640px) {
+    #chartImage {
+        @apply rounded-lg;
+    }
+
+    #analysisResults {
+        @apply gap-2;
+    }
+
+    #analysisResults .metric {
+        @apply p-2;
+    }
+
+    #observations li,
+    #riskFactors li {
+        @apply text-xs;
+    }
+
+    #reasoning {
+        @apply text-xs p-3;
+    }
+}
+
+/* Skeleton Loader for Chart Analysis */
+#chartAnalysisSection .skeleton-chart {
+    @apply h-64 bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200;
+    @apply animate-shimmer rounded-lg;
+}
+
+/* Accessibility: High Contrast Mode */
+@media (prefers-contrast: high) {
+    #chartImage {
+        @apply border-4 border-black;
+    }
+
+    #analysisResults .metric {
+        @apply border-2 border-current;
+    }
+}
+
+/* ============================================================================
+   Market Context & Cross-Asset Analysis Section
+   ============================================================================ */
+
+/* Market Context Card */
+.market-context-card {
+    @apply bg-gradient-to-br from-white via-green-50 to-teal-50;
+    @apply border-2 border-green-100;
+    @apply shadow-xl;
+    @apply relative overflow-hidden;
+}
+
+.market-context-card::before {
+    content: '';
+    @apply absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-green-200/20 to-teal-200/20;
+    @apply rounded-full blur-3xl;
+    @apply pointer-events-none;
+    transform: translate(-30%, -30%);
+}
+
+.market-context-card .card-header {
+    @apply relative z-10;
+    @apply bg-white/80 backdrop-blur-sm;
+    @apply border-b-2 border-green-200;
+}
+
+/* Crypto Price Cards */
+.crypto-price-card {
+    @apply relative p-4 rounded-xl;
+    @apply bg-white border-2 border-gray-200;
+    @apply shadow-md hover:shadow-xl;
+    @apply transition-all duration-300 ease-in-out;
+    @apply hover:scale-105 hover:border-green-300;
+    @apply cursor-default;
+    @apply overflow-hidden;
+}
+
+.crypto-price-card::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-transparent to-green-50/30;
+    @apply opacity-0 transition-opacity duration-300;
+}
+
+.crypto-price-card:hover::before {
+    @apply opacity-100;
+}
+
+/* Bitcoin Card Accent */
+.crypto-price-card:nth-child(1) {
+    @apply hover:border-orange-300;
+}
+
+.crypto-price-card:nth-child(1)::before {
+    @apply to-orange-50/30;
+}
+
+/* Ethereum Card Accent */
+.crypto-price-card:nth-child(2) {
+    @apply hover:border-blue-300;
+}
+
+.crypto-price-card:nth-child(2)::before {
+    @apply to-blue-50/30;
+}
+
+/* Dominance Card Accent */
+.crypto-price-card:nth-child(3) {
+    @apply hover:border-purple-300;
+}
+
+.crypto-price-card:nth-child(3)::before {
+    @apply to-purple-50/30;
+}
+
+/* Fear & Greed Card Special Styling */
+.fear-greed-card {
+    @apply relative;
+}
+
+.fear-greed-card::after {
+    content: '';
+    @apply absolute -right-4 -bottom-4 w-24 h-24;
+    @apply bg-gradient-to-br from-indigo-200/20 to-purple-200/20;
+    @apply rounded-full blur-2xl;
+    @apply pointer-events-none;
+}
+
+/* Price Change Indicators */
+#btcChange,
+#ethChange {
+    @apply font-semibold transition-all duration-300;
+}
+
+#btcChange.positive,
+#ethChange.positive {
+    @apply text-green-600;
+}
+
+#btcChange.negative,
+#ethChange.negative {
+    @apply text-red-600;
+}
+
+/* Market Signal Cards */
+.market-signal-card {
+    @apply relative p-4 rounded-xl;
+    @apply bg-gradient-to-br from-white to-gray-50;
+    @apply border-2 border-gray-200;
+    @apply shadow-md hover:shadow-xl;
+    @apply transition-all duration-300 ease-in-out;
+    @apply hover:scale-105;
+    @apply cursor-default;
+    @apply overflow-hidden;
+}
+
+.market-signal-card::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-transparent to-blue-50/30;
+    @apply opacity-0 transition-opacity duration-300;
+}
+
+.market-signal-card:hover::before {
+    @apply opacity-100;
+}
+
+/* Market Trend Colors */
+#marketTrend {
+    @apply transition-colors duration-300;
+}
+
+#marketTrend.bullish {
+    @apply text-green-600;
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
+#marketTrend.bearish {
+    @apply text-red-600;
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+#marketTrend.neutral {
+    @apply text-gray-600;
+}
+
+/* BTC Trend Colors */
+#btcTrend {
+    @apply transition-colors duration-300;
+}
+
+#btcTrend.bullish {
+    @apply text-green-600;
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
+#btcTrend.bearish {
+    @apply text-red-600;
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+#btcTrend.neutral {
+    @apply text-gray-600;
+}
+
+/* Market Regime Styling */
+#marketRegime {
+    @apply transition-colors duration-300;
+    @apply font-bold uppercase tracking-wide;
+}
+
+#marketRegime.high-volatility {
+    @apply text-orange-600;
+}
+
+#marketRegime.low-volatility {
+    @apply text-blue-600;
+}
+
+#marketRegime.trending {
+    @apply text-purple-600;
+}
+
+/* Section Dividers */
+.market-context-card .flex.items-center.gap-2 {
+    @apply mb-4;
+}
+
+.market-context-card .h-px {
+    @apply bg-gradient-to-r from-green-300 via-teal-200 to-transparent;
+}
+
+/* Icon Badges in Signal Cards */
+.market-signal-card .w-8.h-8 {
+    @apply shadow-lg;
+    animation: icon-float 3s ease-in-out infinite;
+}
+
+@keyframes icon-float {
+    0%, 100% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-5px);
+    }
+}
+
+/* BTC Dominance Special Indicator */
+#btcDominance {
+    @apply relative;
+}
+
+#btcDominance::after {
+    content: '%';
+    @apply text-sm text-gray-500 ml-1;
+}
+
+/* Fear & Greed Index Dynamic Coloring */
+#fearGreedIndex {
+    @apply font-bold;
+    @apply transition-all duration-300;
+}
+
+/* Responsive Market Context */
+@media (max-width: 640px) {
+    .crypto-price-card,
+    .market-signal-card {
+        @apply p-3;
+    }
+
+    .crypto-price-card .text-2xl {
+        @apply text-xl;
+    }
+
+    .market-signal-card .text-xl {
+        @apply text-lg;
+    }
+
+    .market-signal-card .w-8.h-8 {
+        @apply w-6 h-6 text-xs;
+    }
+}
+
+/* Loading State for Market Data */
+.crypto-price-card .text-2xl:empty::before,
+.market-signal-card .text-xl:empty::before {
+    content: '...';
+    @apply text-gray-400 animate-pulse;
+}
+
+/* Pulse Animation for Live Data */
+@keyframes data-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.7;
+    }
+}
+
+.crypto-price-card.updating {
+    animation: data-pulse 1s ease-in-out;
+}
+
+/* Accessibility */
+@media (prefers-contrast: high) {
+    .crypto-price-card,
+    .market-signal-card {
+        @apply border-2 border-current;
+    }
+}
+
+/* ============================================================================
+   Unified Signal Aggregation Section
+   ============================================================================ */
+
+/* Unified Signals Card */
+.unified-signals-card {
+    @apply bg-gradient-to-br from-white via-indigo-50 to-purple-50;
+    @apply border-2 border-indigo-100;
+    @apply shadow-xl;
+    @apply relative overflow-hidden;
+}
+
+.unified-signals-card::before {
+    content: '';
+    @apply absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-indigo-200/20 to-purple-200/20;
+    @apply rounded-full blur-3xl;
+    @apply pointer-events-none;
+    transform: translate(30%, -30%);
+}
+
+.unified-signals-card .card-header {
+    @apply relative z-10;
+    @apply bg-white/80 backdrop-blur-sm;
+    @apply border-b-2 border-indigo-200;
+}
+
+/* Unified Decision Box */
+.unified-decision-box {
+    @apply relative p-6 rounded-xl;
+    @apply bg-gradient-to-r from-indigo-50 via-purple-50 to-blue-50;
+    @apply border-2 border-indigo-200;
+    @apply shadow-lg;
+    @apply overflow-hidden;
+    @apply transition-all duration-300;
+}
+
+.unified-decision-box::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-white/50 to-transparent;
+    @apply pointer-events-none;
+}
+
+.unified-decision-box:hover {
+    @apply shadow-2xl scale-[1.01];
+}
+
+/* Unified Decision Text with Dynamic Colors */
+.unified-decision-text {
+    @apply transition-all duration-300;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Signal Source Cards */
+.signal-source-card {
+    @apply relative p-4 rounded-xl;
+    @apply bg-gradient-to-br from-white to-gray-50;
+    @apply border-2 border-gray-200;
+    @apply shadow-md hover:shadow-xl;
+    @apply transition-all duration-300 ease-in-out;
+    @apply hover:scale-[1.02];
+    @apply cursor-default;
+    @apply overflow-hidden;
+}
+
+.signal-source-card::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-transparent to-indigo-50/20;
+    @apply opacity-0 transition-opacity duration-300;
+}
+
+.signal-source-card:hover::before {
+    @apply opacity-100;
+}
+
+/* Signal Icon Badges */
+.signal-icon-badge {
+    @apply w-8 h-8 rounded-full flex items-center justify-center;
+    @apply text-white text-sm font-bold shadow-md;
+    @apply transition-all duration-300;
+    animation: icon-float 3s ease-in-out infinite;
+}
+
+.signal-icon-badge:hover {
+    @apply scale-110 shadow-lg;
+}
+
+.signal-icon-blue {
+    @apply bg-gradient-to-br from-blue-500 to-blue-600;
+}
+
+.signal-icon-purple {
+    @apply bg-gradient-to-br from-purple-500 to-purple-600;
+}
+
+.signal-icon-green {
+    @apply bg-gradient-to-br from-green-500 to-green-600;
+}
+
+.signal-icon-orange {
+    @apply bg-gradient-to-br from-orange-500 to-orange-600;
+}
+
+.signal-icon-indigo {
+    @apply bg-gradient-to-br from-indigo-500 to-indigo-600;
+}
+
+.signal-icon-pink {
+    @apply bg-gradient-to-br from-pink-500 to-pink-600;
+}
+
+/* Signal Value Dynamic Coloring */
+.signal-value {
+    @apply transition-all duration-300;
+}
+
+.signal-value.buy-signal {
+    @apply text-green-600;
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
+.signal-value.sell-signal {
+    @apply text-red-600;
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+.signal-value.hold-signal {
+    @apply text-gray-600;
+}
+
+/* Signal Metric Cards */
+.signal-metric-card {
+    @apply relative p-4 rounded-xl;
+    @apply bg-gradient-to-br from-white to-gray-50;
+    @apply border-2 border-gray-200;
+    @apply shadow-md hover:shadow-xl;
+    @apply transition-all duration-300 ease-in-out;
+    @apply hover:scale-105 hover:border-indigo-300;
+    @apply cursor-default;
+    @apply overflow-hidden;
+}
+
+.signal-metric-card::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-transparent to-indigo-50/30;
+    @apply opacity-0 transition-opacity duration-300;
+}
+
+.signal-metric-card:hover::before {
+    @apply opacity-100;
+}
+
+/* Progress Bar Animations */
+.signal-source-card .h-2\.5 > div {
+    @apply transition-all duration-500 ease-out;
+}
+
+.signal-source-card:hover .h-2\.5 > div {
+    @apply shadow-lg;
+}
+
+/* Unified Decision Pulse Effect */
+@keyframes decision-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.02);
+        opacity: 0.9;
+    }
+}
+
+.unified-decision-box.updating {
+    animation: decision-pulse 2s ease-in-out infinite;
+}
+
+/* Section Dividers */
+.unified-signals-card .h-px {
+    @apply bg-gradient-to-r from-indigo-300 via-purple-200 to-transparent;
+}
+
+/* Responsive Unified Signals */
+@media (max-width: 640px) {
+    .signal-source-card {
+        @apply p-3;
+    }
+
+    .signal-icon-badge {
+        @apply w-6 h-6 text-xs;
+    }
+
+    .signal-metric-card {
+        @apply p-3;
+    }
+
+    .unified-decision-box {
+        @apply p-4;
+    }
+
+    .unified-decision-text {
+        @apply text-3xl;
+    }
+}
+
+/* Loading States */
+.signal-source-card .signal-value:empty::before {
+    content: '...';
+    @apply text-gray-400 animate-pulse;
+}
+
+/* Accessibility: High Contrast Mode */
+@media (prefers-contrast: high) {
+    .signal-source-card,
+    .signal-metric-card,
+    .unified-decision-box {
+        @apply border-2 border-current;
+    }
+
+    .signal-icon-badge {
+        @apply border-2 border-white;
+    }
+}
+
+/* ============================================================================
+   CrewAI Multi-Agent System Section
+   ============================================================================ */
+
+/* CrewAI System Card */
+.crewai-system-card {
+    @apply bg-gradient-to-br from-white via-orange-50 to-red-50;
+    @apply border-2 border-orange-100;
+    @apply shadow-xl;
+    @apply relative overflow-hidden;
+}
+
+.crewai-system-card::before {
+    content: '';
+    @apply absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-orange-200/20 to-red-200/20;
+    @apply rounded-full blur-3xl;
+    @apply pointer-events-none;
+    transform: translate(30%, -30%);
+}
+
+.crewai-system-card .card-header {
+    @apply relative z-10;
+    @apply bg-white/80 backdrop-blur-sm;
+    @apply border-b-2 border-orange-200;
+}
+
+/* Circuit Breaker Status */
+.circuit-breaker-status {
+    @apply relative p-4 rounded-xl;
+    @apply bg-gradient-to-br from-white to-gray-50;
+    @apply border-2 border-gray-200;
+    @apply shadow-md;
+    @apply transition-all duration-300;
+}
+
+.circuit-breaker-status.active {
+    @apply border-green-300 bg-gradient-to-br from-green-50 to-green-100;
+}
+
+.circuit-breaker-status.open {
+    @apply border-red-300 bg-gradient-to-br from-red-50 to-red-100;
+    animation: pulse-danger 2s ease-in-out infinite;
+}
+
+@keyframes pulse-danger {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+    }
+}
+
+/* AI Agent Status Cards */
+.agent-status-card {
+    @apply relative p-3 rounded-xl;
+    @apply bg-white border-2 border-gray-200;
+    @apply shadow-md hover:shadow-xl;
+    @apply transition-all duration-300 ease-in-out;
+    @apply hover:scale-105 hover:border-orange-300;
+    @apply cursor-default;
+    @apply overflow-hidden;
+}
+
+.agent-status-card::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-transparent to-orange-50/30;
+    @apply opacity-0 transition-opacity duration-300;
+}
+
+.agent-status-card:hover::before {
+    @apply opacity-100;
+}
+
+/* Agent Status Colors */
+.agent-status-card[data-status="active"]::after {
+    content: '';
+    @apply absolute top-2 right-2 w-2 h-2 bg-green-500 rounded-full;
+    animation: pulse-active 2s ease-in-out infinite;
+}
+
+.agent-status-card[data-status="idle"]::after {
+    content: '';
+    @apply absolute top-2 right-2 w-2 h-2 bg-yellow-500 rounded-full;
+}
+
+.agent-status-card[data-status="error"]::after {
+    content: '';
+    @apply absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full;
+    animation: pulse-danger 2s ease-in-out infinite;
+}
+
+@keyframes pulse-active {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+    }
+}
+
+/* System Statistics Cards */
+.system-stat-card {
+    @apply relative p-3 rounded-lg text-center;
+    @apply transition-all duration-300;
+    @apply hover:scale-105;
+    @apply cursor-default;
+}
+
+.system-stat-card.stat-blue {
+    @apply bg-gradient-to-br from-blue-50 to-blue-100;
+    @apply border border-blue-200;
+}
+
+.system-stat-card.stat-green {
+    @apply bg-gradient-to-br from-green-50 to-green-100;
+    @apply border border-green-200;
+}
+
+.system-stat-card.stat-purple {
+    @apply bg-gradient-to-br from-purple-50 to-purple-100;
+    @apply border border-purple-200;
+}
+
+.system-stat-card.stat-orange {
+    @apply bg-gradient-to-br from-orange-50 to-orange-100;
+    @apply border border-orange-200;
+}
+
+/* ============================================================================
+   HyperDash Trader Monitoring Section
+   ============================================================================ */
+
+/* HyperDash Card */
+.hyperdash-card {
+    @apply bg-gradient-to-br from-white via-cyan-50 to-blue-50;
+    @apply border-2 border-cyan-100;
+    @apply shadow-xl;
+    @apply relative overflow-hidden;
+}
+
+.hyperdash-card::before {
+    content: '';
+    @apply absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-cyan-200/20 to-blue-200/20;
+    @apply rounded-full blur-3xl;
+    @apply pointer-events-none;
+    transform: translate(-30%, -30%);
+}
+
+.hyperdash-card .card-header {
+    @apply relative z-10;
+    @apply bg-white/80 backdrop-blur-sm;
+    @apply border-b-2 border-cyan-200;
+}
+
+/* Trader Summary Cards */
+.trader-summary-card {
+    @apply relative p-3 rounded-lg text-center;
+    @apply transition-all duration-300;
+    @apply hover:scale-105 hover:shadow-lg;
+}
+
+.trader-summary-card.pnl-positive {
+    @apply bg-gradient-to-br from-green-50 to-green-100;
+    @apply border border-green-200;
+}
+
+.trader-summary-card.pnl-negative {
+    @apply bg-gradient-to-br from-red-50 to-red-100;
+    @apply border border-red-200;
+}
+
+.trader-summary-card.pnl-neutral {
+    @apply bg-gradient-to-br from-blue-50 to-blue-100;
+    @apply border border-blue-200;
+}
+
+/* View Toggle Tabs */
+.view-toggle-tabs {
+    @apply flex bg-gray-100 rounded-lg p-1;
+}
+
+.view-toggle-tabs button {
+    @apply px-3 py-1 text-sm font-medium rounded-md transition-all duration-200;
+    @apply hover:bg-gray-200;
+}
+
+.view-toggle-tabs button.active {
+    @apply bg-white shadow;
+}
+
+/* ============================================================================
+   Spike Detections & Agent Decisions Section
+   ============================================================================ */
+
+/* Spike & Decisions Grid Cards */
+.spike-decision-card {
+    @apply bg-gradient-to-br from-white via-red-50 to-pink-50;
+    @apply border-2 border-red-100;
+    @apply shadow-xl;
+    @apply relative overflow-hidden;
+}
+
+.spike-decision-card::before {
+    content: '';
+    @apply absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-red-200/20 to-pink-200/20;
+    @apply rounded-full blur-3xl;
+    @apply pointer-events-none;
+    transform: translate(30%, -30%);
+}
+
+/* Spike Detection Item */
+.spike-item {
+    @apply relative p-3 rounded-lg;
+    @apply bg-white border-2 border-gray-200;
+    @apply shadow-sm hover:shadow-md;
+    @apply transition-all duration-300;
+    @apply hover:border-red-300;
+}
+
+.spike-item::before {
+    content: '⚡';
+    @apply absolute -left-1 -top-1 text-2xl;
+    filter: drop-shadow(0 0 4px rgba(239, 68, 68, 0.5));
+}
+
+/* Agent Decision Item */
+.decision-item {
+    @apply relative p-3 rounded-lg;
+    @apply bg-white border-2 border-gray-200;
+    @apply shadow-sm hover:shadow-md;
+    @apply transition-all duration-300;
+    @apply hover:border-purple-300;
+}
+
+.decision-item::before {
+    content: '🧠';
+    @apply absolute -left-1 -top-1 text-2xl;
+}
+
+/* ============================================================================
+   AI Agent System Logs Section
+   ============================================================================ */
+
+/* Logs Card */
+.logs-card {
+    @apply bg-gradient-to-br from-white via-slate-50 to-gray-50;
+    @apply border-2 border-slate-200;
+    @apply shadow-xl;
+    @apply relative overflow-hidden;
+}
+
+.logs-card::before {
+    content: '';
+    @apply absolute top-0 left-0 w-96 h-96 bg-gradient-to-br from-blue-100/20 to-purple-100/20;
+    @apply rounded-full blur-3xl;
+    @apply pointer-events-none;
+    transform: translate(-30%, -30%);
+}
+
+/* Logs Card Header Override */
+.logs-card h3 {
+    @apply text-gray-900;
+}
+
+/* Log Entry Styling */
+.log-entry {
+    @apply relative py-1 px-2 rounded;
+    @apply font-mono text-xs;
+    @apply transition-colors duration-200;
+    @apply hover:bg-gray-100;
+}
+
+.log-entry.log-info {
+    @apply text-blue-700;
+}
+
+.log-entry.log-warning {
+    @apply text-yellow-700;
+}
+
+.log-entry.log-error {
+    @apply text-red-700;
+}
+
+.log-entry.log-success {
+    @apply text-green-700;
+}
+
+/* Log Terminal Effect */
+.log-terminal {
+    @apply bg-white rounded-lg p-4;
+    @apply font-mono text-xs;
+    @apply overflow-y-auto max-h-96;
+    @apply border-2 border-slate-200;
+    @apply shadow-inner;
+}
+
+.log-terminal::-webkit-scrollbar {
+    @apply w-2;
+}
+
+.log-terminal::-webkit-scrollbar-track {
+    @apply bg-gray-100 rounded;
+}
+
+.log-terminal::-webkit-scrollbar-thumb {
+    @apply bg-gray-400 rounded hover:bg-gray-500;
+}
+
+/* ============================================================================
+   RL Bot Live Status Section
+   ============================================================================ */
+
+/* RL Bot Status Cards */
+.rl-bot-card {
+    @apply relative;
+    @apply bg-gradient-to-br from-white via-purple-50 to-indigo-50;
+    @apply border-2 border-purple-100;
+    @apply shadow-lg hover:shadow-xl;
+    @apply transition-all duration-300;
+    @apply hover:scale-[1.02];
+}
+
+.rl-bot-card::before {
+    content: '';
+    @apply absolute inset-0 bg-gradient-to-br from-transparent to-purple-50/30;
+    @apply opacity-0 transition-opacity duration-300;
+}
+
+.rl-bot-card:hover::before {
+    @apply opacity-100;
+}
+
+/* RL Bot Status Indicator */
+.rl-status-indicator {
+    @apply inline-flex items-center gap-2;
+    @apply px-3 py-1 rounded-full;
+    @apply text-xs font-semibold;
+    @apply transition-all duration-300;
+}
+
+.rl-status-indicator.status-running {
+    @apply bg-green-100 text-green-800;
+}
+
+.rl-status-indicator.status-running::before {
+    content: '●';
+    @apply text-green-500;
+    animation: pulse-active 2s ease-in-out infinite;
+}
+
+.rl-status-indicator.status-stopped {
+    @apply bg-red-100 text-red-800;
+}
+
+.rl-status-indicator.status-stopped::before {
+    content: '●';
+    @apply text-red-500;
+}
+
+.rl-status-indicator.status-paused {
+    @apply bg-yellow-100 text-yellow-800;
+}
+
+.rl-status-indicator.status-paused::before {
+    content: '●';
+    @apply text-yellow-500;
+    animation: pulse-slow 3s ease-in-out infinite;
+}
+
+/* RL Decision Box */
+.rl-decision-box {
+    @apply relative p-4 rounded-lg;
+    @apply bg-gradient-to-br from-purple-50 to-indigo-50;
+    @apply border border-purple-200;
+    @apply shadow-inner;
+}
+
+/* ============================================================================
+   Performance Metrics Section
+   ============================================================================ */
+
+/* Performance Metrics Cards */
+.performance-card {
+    @apply relative;
+    @apply bg-gradient-to-br from-white via-emerald-50 to-teal-50;
+    @apply border-2 border-emerald-100;
+    @apply shadow-lg hover:shadow-xl;
+    @apply transition-all duration-300;
+}
+
+.performance-card::before {
+    content: '';
+    @apply absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-emerald-200/20 to-teal-200/20;
+    @apply rounded-full blur-3xl;
+    @apply pointer-events-none;
+    transform: translate(30%, -30%);
+}
+
+/* Performance Metric Item */
+.performance-metric {
+    @apply flex justify-between items-center;
+    @apply py-2 px-3 rounded-lg;
+    @apply transition-all duration-200;
+    @apply hover:bg-emerald-50;
+}
+
+.performance-metric.metric-positive {
+    @apply text-green-700;
+}
+
+.performance-metric.metric-negative {
+    @apply text-red-700;
+}
+
+.performance-metric.metric-neutral {
+    @apply text-gray-700;
+}
+
+/* Win Rate Progress Bar */
+.win-rate-bar {
+    @apply w-full bg-gray-200 rounded-full h-3 overflow-hidden;
+    @apply shadow-inner;
+}
+
+.win-rate-bar-fill {
+    @apply h-full rounded-full transition-all duration-500;
+    @apply bg-gradient-to-r from-green-500 to-emerald-600;
+}
+
+/* ============================================================================
+   Responsive Design for All New Sections
+   ============================================================================ */
+
+@media (max-width: 640px) {
+    .crewai-system-card,
+    .hyperdash-card,
+    .spike-decision-card,
+    .logs-card,
+    .rl-bot-card,
+    .performance-card {
+        @apply p-3;
+    }
+
+    .agent-status-card {
+        @apply p-2;
+    }
+
+    .system-stat-card,
+    .trader-summary-card {
+        @apply p-2;
+    }
+
+    .spike-item,
+    .decision-item {
+        @apply p-2 text-xs;
+    }
+
+    .log-terminal {
+        @apply p-2 text-[10px];
+    }
+
+    .rl-decision-box {
+        @apply p-3;
+    }
+
+    .performance-metric {
+        @apply py-1 px-2 text-sm;
+    }
+}
+
+/* ============================================================================
+   Accessibility for New Sections
+   ============================================================================ */
+
+@media (prefers-contrast: high) {
+    .crewai-system-card,
+    .hyperdash-card,
+    .spike-decision-card,
+    .rl-bot-card,
+    .performance-card {
+        @apply border-2 border-current;
+    }
+
+    .agent-status-card,
+    .spike-item,
+    .decision-item {
+        @apply border-2 border-current;
+    }
+}
+
+/* Reduced motion for animations */
+@media (prefers-reduced-motion: reduce) {
+    .agent-status-card,
+    .spike-item,
+    .decision-item,
+    .rl-bot-card,
+    .performance-card {
+        @apply hover:scale-100;
+    }
+
+    @keyframes pulse-active,
+    @keyframes pulse-danger,
+    @keyframes icon-float {
+        0%, 100% {
+            transform: none;
+            opacity: 1;
+        }
+    }
+}
