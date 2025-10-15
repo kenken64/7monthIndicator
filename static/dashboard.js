@@ -7,6 +7,7 @@ let newsPerPage = 10;
 
 // PIN protection variables
 let pendingPauseAction = null;
+let pendingBacktestAction = null;
 let pinAttempts = 0;
 let pinBlocked = false;
 
@@ -1062,108 +1063,145 @@ function showPinModal() {
     });
 }
 
+function showPinModalForBacktest() {
+    const modal = document.getElementById('pinModal');
+    const pinInput = document.getElementById('controlPin');
+    const modalTitle = document.getElementById('pinModalTitle');
+
+    // Update modal title for backtest
+    modalTitle.textContent = '🔐 Backtest Authentication';
+
+    // Clear previous state
+    pinInput.value = '';
+    hideAllPinMessages();
+
+    // Show modal and focus input
+    modal.style.display = 'flex';
+    setTimeout(() => pinInput.focus(), 100);
+
+    // Add enter key support
+    pinInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            submitPin();
+        }
+    });
+
+    // Add input formatting (only numbers)
+    pinInput.addEventListener('input', function(e) {
+        // Only allow digits
+        e.target.value = e.target.value.replace(/[^0-9]/g, '');
+
+        // Clear error messages when user starts typing
+        hideAllPinMessages();
+    });
+}
+
 function closePinModal() {
-    document.getElementById('pinModal').style.display = 'none';
+    const modal = document.getElementById('pinModal');
+    const modalTitle = document.getElementById('pinModalTitle');
+
+    modal.style.display = 'none';
     pendingPauseAction = null;
+    pendingBacktestAction = null;
+
+    // Reset title
+    modalTitle.textContent = '🔐 Bot Control Authentication';
+
     hideAllPinMessages();
 }
 
 async function submitPin() {
     const pin = document.getElementById('controlPin').value.trim();
     const submitBtn = document.getElementById('submitPinBtn');
-    
+
     // Validate PIN format
     if (!pin || pin.length !== 6 || !/^\d{6}$/.test(pin)) {
         showPinError('PIN must be exactly 6 digits');
         return;
     }
-    
-    if (!pendingPauseAction) {
+
+    if (!pendingPauseAction && !pendingBacktestAction) {
         showPinError('No pending action');
         return;
     }
-    
+
     // Disable submit button during request
     submitBtn.disabled = true;
     submitBtn.textContent = 'Verifying...';
-    
+
     try {
-        const response = await fetch('/api/bot-pause', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                action: pendingPauseAction,
-                pin: pin
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (data.success) {
-            // PIN validated successfully
-            showPinSuccess('PIN validated! Executing action...');
-            
-            setTimeout(() => {
-                closePinModal();
-                showNotification(data.message, 'success');
-                
-                // Update UI
-                updatePauseButton(data.is_paused);
-                loadPauseStatus();
-                
-                // Reset attempt counter
-                pinAttempts = 0;
-                pinBlocked = false;
-            }, 1000);
-            
+        // Handle backtest actions
+        if (pendingBacktestAction) {
+            const response = await fetch('/api/validate-pin', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    pin: pin
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // PIN validated successfully
+                showPinSuccess('PIN validated! Running backtest...');
+
+                setTimeout(async () => {
+                    closePinModal();
+
+                    // Execute the backtest action
+                    if (pendingBacktestAction === 'quick') {
+                        await executeQuickBacktest();
+                    }
+
+                    // Reset attempt counter
+                    pinAttempts = 0;
+                    pinBlocked = false;
+                }, 1000);
+
+            } else {
+                handleFailedPinAttempt(data, response.status);
+            }
+
         } else {
-            // PIN validation failed
-            if (response.status === 429 || data.blocked) {
-                // Rate limited/blocked
-                showPinBlocked(data.message);
-                pinBlocked = true;
-                
-                // Auto-close modal after showing blocked message
+            // Handle pause/resume actions
+            const response = await fetch('/api/bot-pause', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    action: pendingPauseAction,
+                    pin: pin
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // PIN validated successfully
+                showPinSuccess('PIN validated! Executing action...');
+
                 setTimeout(() => {
                     closePinModal();
-                    showNotification('PIN attempts blocked for 15 minutes', 'error');
-                }, 2000);
-                
-                // Reset block after 15 minutes
-                setTimeout(() => {
-                    pinBlocked = false;
+                    showNotification(data.message, 'success');
+
+                    // Update UI
+                    updatePauseButton(data.is_paused);
+                    loadPauseStatus();
+
+                    // Reset attempt counter
                     pinAttempts = 0;
-                }, 15 * 60 * 1000);
-                
+                    pinBlocked = false;
+                }, 1000);
+
             } else {
-                // Invalid PIN
-                pinAttempts++;
-                showPinError(data.message);
-                
-                // Clear PIN input
-                document.getElementById('controlPin').value = '';
-                document.getElementById('controlPin').focus();
-                
-                if (pinAttempts >= 3) {
-                    showPinBlocked('Too many failed attempts. Blocked for 15 minutes.');
-                    pinBlocked = true;
-                    
-                    setTimeout(() => {
-                        closePinModal();
-                        showNotification('PIN attempts blocked for 15 minutes', 'error');
-                    }, 2000);
-                    
-                    // Reset after 15 minutes
-                    setTimeout(() => {
-                        pinBlocked = false;
-                        pinAttempts = 0;
-                    }, 15 * 60 * 1000);
-                }
+                handleFailedPinAttempt(data, response.status);
             }
         }
-        
+
     } catch (error) {
         console.error('PIN submission error:', error);
         showPinError('Network error. Please try again.');
@@ -1171,6 +1209,52 @@ async function submitPin() {
         // Re-enable submit button
         submitBtn.disabled = false;
         submitBtn.textContent = 'Submit';
+    }
+}
+
+function handleFailedPinAttempt(data, statusCode) {
+    // PIN validation failed
+    if (statusCode === 429 || data.blocked) {
+        // Rate limited/blocked
+        showPinBlocked(data.message);
+        pinBlocked = true;
+
+        // Auto-close modal after showing blocked message
+        setTimeout(() => {
+            closePinModal();
+            showNotification('PIN attempts blocked for 15 minutes', 'error');
+        }, 2000);
+
+        // Reset block after 15 minutes
+        setTimeout(() => {
+            pinBlocked = false;
+            pinAttempts = 0;
+        }, 15 * 60 * 1000);
+
+    } else {
+        // Invalid PIN
+        pinAttempts++;
+        showPinError(data.message || 'Invalid PIN. Please try again.');
+
+        // Clear PIN input
+        document.getElementById('controlPin').value = '';
+        document.getElementById('controlPin').focus();
+
+        if (pinAttempts >= 3) {
+            showPinBlocked('Too many failed attempts. Blocked for 15 minutes.');
+            pinBlocked = true;
+
+            setTimeout(() => {
+                closePinModal();
+                showNotification('PIN attempts blocked for 15 minutes', 'error');
+            }, 2000);
+
+            // Reset after 15 minutes
+            setTimeout(() => {
+                pinBlocked = false;
+                pinAttempts = 0;
+            }, 15 * 60 * 1000);
+        }
     }
 }
 
@@ -1654,7 +1738,7 @@ async function loadAIAgentLogs() {
 
                 return `
                     <div class="${logColor} font-mono text-xs">
-                        ${timeStr ? `<span class="text-gray-500">[${timeStr}]</span> ` : ''}${escapeHtml(log.content)}
+                        ${timeStr ? `<span class="text-white font-semibold log-timestamp">[${timeStr}]</span> ` : ''}${escapeHtml(log.content)}
                     </div>
                 `;
             }).join('');
@@ -1990,4 +2074,273 @@ function switchHyperDashView(view) {
         tabIframe.className = 'px-3 py-1 text-sm font-medium rounded-md bg-white shadow';
     }
 }
+
+
+// ============================================================================
+// Backtesting Functions
+// ============================================================================
+
+/**
+ * Load backtest data availability on page load
+ */
+async function loadBacktestData() {
+    try {
+        const response = await fetch('/api/backtest/available-data');
+        const result = await response.json();
+
+        if (result.success && result.data) {
+            const data = result.data;
+
+            // Update signal data
+            if (data.signals && data.signals.length > 0) {
+                const signalData = data.signals[0];
+                document.getElementById('backtestSignalCount').textContent = signalData.signal_count || 0;
+                document.getElementById('backtestBuyCount').textContent = signalData.buy_count || 0;
+                document.getElementById('backtestSellCount').textContent = signalData.sell_count || 0;
+                
+                // Format dates
+                if (signalData.first_signal && signalData.last_signal) {
+                    const firstDate = new Date(signalData.first_signal).toLocaleDateString();
+                    const lastDate = new Date(signalData.last_signal).toLocaleDateString();
+                    document.getElementById('backtestSignalDates').textContent = `${firstDate} - ${lastDate}`;
+                }
+
+                // Set status
+                const statusEl = document.getElementById('backtestDataStatus');
+                const recommendEl = document.getElementById('backtestRecommendation');
+                
+                if (signalData.buy_count > 0 || signalData.sell_count > 0) {
+                    statusEl.textContent = '✅ Ready';
+                    statusEl.className = 'text-sm font-bold text-green-600';
+                    recommendEl.textContent = 'Sufficient data for backtesting';
+                } else {
+                    statusEl.textContent = '⚠️  Limited';
+                    statusEl.className = 'text-sm font-bold text-yellow-600';
+                    recommendEl.textContent = 'Need BUY/SELL signals';
+                }
+            } else {
+                // No signals
+                document.getElementById('backtestSignalCount').textContent = '0';
+                document.getElementById('backtestDataStatus').textContent = '❌  No Data';
+                document.getElementById('backtestDataStatus').className = 'text-sm font-bold text-red-600';
+                document.getElementById('backtestRecommendation').textContent = 'Run bot to collect signals';
+            }
+
+            // Load insights immediately
+            await loadBacktestInsights();
+        }
+    } catch (error) {
+        console.error('Error loading backtest data:', error);
+    }
+}
+
+/**
+ * Run quick backtest with current weights (PIN protected)
+ */
+async function runQuickBacktest() {
+    // Check if PIN is blocked
+    if (pinBlocked) {
+        showNotification('PIN attempts blocked. Please wait before trying again.', 'error');
+        return;
+    }
+
+    // Set pending action and show PIN modal
+    pendingBacktestAction = 'quick';
+    showPinModalForBacktest();
+}
+
+/**
+ * Execute quick backtest after PIN validation
+ */
+async function executeQuickBacktest() {
+    const btn = document.getElementById('quickBacktestBtn');
+    const loadingEl = document.getElementById('backtestLoading');
+    const resultsEl = document.getElementById('backtestResults');
+
+    try {
+        // Disable button and show loading
+        btn.disabled = true;
+        btn.innerHTML = '<span class="text-2xl">⏳</span><div class="ml-3 text-left"><div class="font-semibold">Running...</div><div class="text-xs opacity-90">Please wait</div></div>';
+        loadingEl.style.display = 'block';
+        resultsEl.style.display = 'none';
+
+        const response = await fetch('/api/backtest/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: 'SUIUSDC',
+                days_back: 30
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success && result.data) {
+            displayBacktestResults(result.data);
+            // Reload insights with new backtest data
+            await loadBacktestInsights();
+        } else {
+            alert(`Backtest failed: ${result.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error('Error running backtest:', error);
+        alert('Error running backtest. Check console for details.');
+    } finally {
+        // Re-enable button
+        btn.disabled = false;
+        btn.innerHTML = '<span class="text-2xl">⚡</span><div class="ml-3 text-left"><div class="font-semibold">Quick Backtest</div><div class="text-xs opacity-90">Test current weight configuration</div></div>';
+        loadingEl.style.display = 'none';
+    }
+}
+
+/**
+ * Run weight optimization
+ */
+async function runWeightOptimization() {
+    const btn = document.getElementById('optimizeBtn');
+    const loadingEl = document.getElementById('backtestLoading');
+
+    try {
+        // Disable button and show loading
+        btn.disabled = true;
+        btn.innerHTML = '<span class="text-2xl">⏳</span><div class="ml-3 text-left"><div class="font-semibold">Optimizing...</div><div class="text-xs opacity-90">Testing 6 configurations</div></div>';
+        loadingEl.style.display = 'block';
+
+        const response = await fetch('/api/backtest/optimize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                symbol: 'SUIUSDC',
+                days_back: 30
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success && result.data) {
+            // Display best result
+            if (result.data.best_by_roi) {
+                displayBacktestResults(result.data.best_by_roi);
+            }
+
+            // Show all results in console
+            console.log('Optimization Results:', result.data.results);
+            
+            alert(`Optimization complete! Tested ${result.data.total_tested} configurations.\nBest ROI: ${result.data.best_by_roi?.roi?.toFixed(2)}%\nCheck console for full results.`);
+            
+            // Reload insights
+            await loadBacktestInsights();
+        } else {
+            alert(`Optimization failed: ${result.error || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error('Error running optimization:', error);
+        alert('Error running optimization. Check console for details.');
+    } finally {
+        // Re-enable button
+        btn.disabled = false;
+        btn.innerHTML = '<span class="text-2xl">🎯</span><div class="ml-3 text-left"><div class="font-semibold">Optimize Weights</div><div class="text-xs opacity-90">Find best signal weight combination</div></div>';
+        loadingEl.style.display = 'none';
+    }
+}
+
+/**
+ * Display backtest results in the UI
+ */
+function displayBacktestResults(data) {
+    const resultsEl = document.getElementById('backtestResults');
+
+    // Update metrics
+    document.getElementById('backtestROI').textContent = `${data.roi?.toFixed(2) || 0}%`;
+    document.getElementById('backtestROI').className = `text-xl font-bold ${data.roi > 0 ? 'text-green-600' : 'text-red-600'}`;
+    
+    document.getElementById('backtestWinRate').textContent = `${data.win_rate?.toFixed(1) || 0}%`;
+    document.getElementById('backtestWinRate').className = `text-xl font-bold ${data.win_rate > 50 ? 'text-green-600' : 'text-yellow-600'}`;
+    
+    document.getElementById('backtestTotalTrades').textContent = data.total_trades || 0;
+    
+    document.getElementById('backtestTotalPnL').textContent = `$${data.total_pnl?.toFixed(2) || 0}`;
+    document.getElementById('backtestTotalPnL').className = `text-xl font-bold ${data.total_pnl > 0 ? 'text-green-600' : 'text-red-600'}`;
+    
+    document.getElementById('backtestSharpe').textContent = data.sharpe_ratio?.toFixed(2) || '0.00';
+    document.getElementById('backtestSharpe').className = `text-xl font-bold ${data.sharpe_ratio > 1 ? 'text-green-600' : 'text-gray-600'}`;
+    
+    document.getElementById('backtestDrawdown').textContent = `${data.max_drawdown?.toFixed(1) || 0}%`;
+    document.getElementById('backtestDrawdown').className = `text-xl font-bold ${data.max_drawdown > 20 ? 'text-red-600' : 'text-yellow-600'}`;
+
+    // Update period
+    if (data.config) {
+        document.getElementById('backtestPeriod').textContent = `${data.config.start_date} to ${data.config.end_date}`;
+    }
+
+    // Show results with animation
+    resultsEl.style.display = 'block';
+    resultsEl.classList.add('backtest-results-enter');
+}
+
+/**
+ * Load actionable insights from backtest
+ */
+async function loadBacktestInsights() {
+    try {
+        const response = await fetch('/api/backtest/insights');
+        const result = await response.json();
+
+        if (result.success && result.data) {
+            displayInsights(result.data.insights);
+        }
+    } catch (error) {
+        console.error('Error loading insights:', error);
+    }
+}
+
+/**
+ * Display actionable insights in the UI
+ */
+function displayInsights(insights) {
+    const insightsList = document.getElementById('insightsList');
+
+    if (!insights || insights.length === 0) {
+        insightsList.innerHTML = '<div class="text-center text-gray-500 text-sm py-4">No insights available. Run a backtest to generate insights.</div>';
+        return;
+    }
+
+    // Sort insights by importance (danger > warning > positive > info)
+    const priority = { 'danger': 1, 'warning': 2, 'positive': 3, 'info': 4 };
+    insights.sort((a, b) => (priority[a.type] || 99) - (priority[b.type] || 99));
+
+    insightsList.innerHTML = insights.map(insight => {
+        const iconMap = {
+            'positive': '✅',
+            'warning': '⚠️',
+            'danger': '🚨',
+            'info': 'ℹ️'
+        };
+
+        return `
+            <div class="insight-card insight-${insight.type}">
+                <div class="flex items-start">
+                    <div class="insight-icon icon-${insight.type}">
+                        ${iconMap[insight.type] || 'ℹ️'}
+                    </div>
+                    <div class="ml-4 flex-1">
+                        <div class="insight-title">${insight.title}</div>
+                        <div class="insight-message">${insight.message}</div>
+                        <div class="flex items-center justify-between">
+                            <div class="insight-action">${insight.action}</div>
+                            <div class="insight-confidence confidence-${insight.confidence}">
+                                ${insight.confidence.toUpperCase()}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Initialize backtest data on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadBacktestData();
+});
 

@@ -462,6 +462,134 @@
             </div>
         </div>
 
+        <!-- Backtesting & Strategy Analysis Section -->
+        <div class="card backtest-card mb-8">
+            <div class="card-header">
+                <h3 class="card-title">
+                    <span class="text-2xl">📊</span>
+                    <span class="bg-gradient-to-r from-teal-600 to-cyan-600 bg-clip-text text-transparent">Strategy Backtesting & Insights</span>
+                </h3>
+                <div class="flex items-center gap-2">
+                    <span class="px-3 py-1 bg-teal-100 text-teal-800 rounded-full text-xs font-semibold">Historical Analysis</span>
+                    <span class="px-3 py-1 bg-cyan-100 text-cyan-800 rounded-full text-xs font-semibold">Actionable Insights</span>
+                </div>
+            </div>
+
+            <!-- Backtest Data Availability -->
+            <div class="mb-6">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="text-sm font-semibold text-gray-700">📈 Available Data</span>
+                    <div class="h-px flex-1 bg-gradient-to-r from-teal-200 to-transparent"></div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                    <div class="backtest-data-card">
+                        <div class="text-xs text-gray-600 mb-1">Total Signals</div>
+                        <div class="text-2xl font-bold text-blue-600" id="backtestSignalCount">-</div>
+                        <div class="text-xs text-gray-500 mt-1" id="backtestSignalDates">-</div>
+                    </div>
+                    <div class="backtest-data-card">
+                        <div class="text-xs text-gray-600 mb-1">BUY Signals</div>
+                        <div class="text-2xl font-bold text-green-600" id="backtestBuyCount">-</div>
+                        <div class="text-xs text-gray-500 mt-1">Actionable signals</div>
+                    </div>
+                    <div class="backtest-data-card">
+                        <div class="text-xs text-gray-600 mb-1">SELL Signals</div>
+                        <div class="text-2xl font-bold text-red-600" id="backtestSellCount">-</div>
+                        <div class="text-xs text-gray-500 mt-1">Actionable signals</div>
+                    </div>
+                    <div class="backtest-data-card">
+                        <div class="text-xs text-gray-600 mb-1">Data Status</div>
+                        <div class="text-sm font-bold" id="backtestDataStatus">-</div>
+                        <div class="text-xs text-gray-500 mt-1" id="backtestRecommendation">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Backtest Controls -->
+            <div class="mb-6">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="text-sm font-semibold text-gray-700">🎮 Backtest Controls</span>
+                    <div class="h-px flex-1 bg-gradient-to-r from-cyan-200 to-transparent"></div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <button onclick="runQuickBacktest()" class="backtest-action-btn btn-blue" id="quickBacktestBtn">
+                        <span class="text-2xl">⚡</span>
+                        <div class="ml-3 text-left">
+                            <div class="font-semibold">Quick Backtest</div>
+                            <div class="text-xs opacity-90">Test current weight configuration</div>
+                        </div>
+                    </button>
+                    <button onclick="runWeightOptimization()" class="backtest-action-btn btn-purple" id="optimizeBtn" title="Runs multiple backtests with different signal weight combinations to find the optimal configuration that maximizes ROI and Sharpe ratio. This process tests various weightings across Technical Indicators, RL Enhancement, Chart Analysis, AI Multi-Agent, Market Context, and News Sentiment.">
+                        <span class="text-2xl">🎯</span>
+                        <div class="ml-3 text-left flex-1">
+                            <div class="font-semibold flex items-center gap-1">
+                                Optimize Weights
+                                <span class="text-xs opacity-70" title="Click for detailed explanation">ℹ️</span>
+                            </div>
+                            <div class="text-xs opacity-90">Find best signal weight combination</div>
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Backtest Results -->
+            <div id="backtestResults" style="display: none;" class="mb-6">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="text-sm font-semibold text-gray-700">📊 Backtest Results</span>
+                    <div class="h-px flex-1 bg-gradient-to-r from-green-200 to-transparent"></div>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 mb-4">
+                    <div class="backtest-metric-card">
+                        <div class="text-xs text-gray-600 mb-1">ROI</div>
+                        <div class="text-xl font-bold" id="backtestROI">-</div>
+                    </div>
+                    <div class="backtest-metric-card">
+                        <div class="text-xs text-gray-600 mb-1">Win Rate</div>
+                        <div class="text-xl font-bold" id="backtestWinRate">-</div>
+                    </div>
+                    <div class="backtest-metric-card">
+                        <div class="text-xs text-gray-600 mb-1">Total Trades</div>
+                        <div class="text-xl font-bold" id="backtestTotalTrades">-</div>
+                    </div>
+                    <div class="backtest-metric-card">
+                        <div class="text-xs text-gray-600 mb-1">Total PnL</div>
+                        <div class="text-xl font-bold" id="backtestTotalPnL">-</div>
+                    </div>
+                    <div class="backtest-metric-card">
+                        <div class="text-xs text-gray-600 mb-1">Sharpe Ratio</div>
+                        <div class="text-xl font-bold" id="backtestSharpe">-</div>
+                    </div>
+                    <div class="backtest-metric-card">
+                        <div class="text-xs text-gray-600 mb-1">Max Drawdown</div>
+                        <div class="text-xl font-bold" id="backtestDrawdown">-</div>
+                    </div>
+                </div>
+                <div class="text-xs text-gray-500 text-center">
+                    Test Period: <span id="backtestPeriod">-</span>
+                </div>
+            </div>
+
+            <!-- Actionable Insights -->
+            <div id="backtestInsights" class="mb-6">
+                <div class="flex items-center gap-2 mb-3">
+                    <span class="text-sm font-semibold text-gray-700">💡 Actionable Insights</span>
+                    <div class="h-px flex-1 bg-gradient-to-r from-yellow-200 to-transparent"></div>
+                </div>
+                <div id="insightsList" class="space-y-3">
+                    <div class="text-center text-gray-500 text-sm py-4">
+                        Run a backtest to generate insights for your trading decisions
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div id="backtestLoading" style="display: none;" class="text-center py-8">
+                <div class="loading-spinner mx-auto mb-3 w-12 h-12 border-4 border-teal-500"></div>
+                <div class="text-gray-600 font-medium">Running backtest...</div>
+                <div class="text-gray-400 text-sm mt-2">This may take a few moments</div>
+            </div>
+        </div>
+
         <!-- CrewAI Multi-Agent System Section -->
         <div class="card crewai-system-card mb-8">
             <div class="card-header">
@@ -554,93 +682,35 @@
                     <span class="text-2xl">👤</span>
                     <span class="bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">HyperDash Trader Monitor</span>
                 </h3>
-                <div class="view-toggle-tabs">
-                    <button id="tabTableView" class="active" onclick="switchHyperDashView('table')">
-                        📊 Table
-                    </button>
-                    <button id="tabIframeView" onclick="switchHyperDashView('iframe')">
-                        🌐 Live View
-                    </button>
+            </div>
+
+            <!-- Live View Only -->
+            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                <div class="flex items-start">
+                    <span class="text-yellow-600 mr-2">⚠️</span>
+                    <div class="text-xs text-yellow-800">
+                        <strong>Note:</strong> HyperDash has X-Frame-Options: SAMEORIGIN which may block iframe embedding from external domains. If the page doesn't load, use the "Open in New Tab" button below.
+                    </div>
                 </div>
             </div>
 
-            <!-- Table View -->
-            <div id="hyperdashTableView">
-                <!-- Trader Summary -->
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-                    <div class="trader-summary-card pnl-neutral">
-                        <div class="text-xs text-gray-600">Total PnL</div>
-                        <div class="text-lg font-bold text-green-600" id="traderTotalPnl">-</div>
-                    </div>
-                    <div class="trader-summary-card pnl-neutral">
-                        <div class="text-xs text-gray-600">Total Margin</div>
-                        <div class="text-lg font-bold text-blue-600" id="traderTotalMargin">-</div>
-                    </div>
-                    <div class="trader-summary-card pnl-neutral">
-                        <div class="text-xs text-gray-600">Account Value</div>
-                        <div class="text-lg font-bold text-purple-600" id="traderAccountValue">-</div>
-                    </div>
-                </div>
-
-                <!-- Open Orders Table -->
-                <div class="overflow-x-auto">
-                    <table class="min-w-full">
-                        <thead class="bg-gray-50 border-b">
-                            <tr>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th>
-                                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Side</th>
-                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Size</th>
-                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Entry</th>
-                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Current</th>
-                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">PnL</th>
-                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">PnL %</th>
-                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Leverage</th>
-                                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase">Liq. Price</th>
-                            </tr>
-                        </thead>
-                        <tbody id="hyperdashOrdersTable" class="divide-y divide-gray-200">
-                            <tr>
-                                <td colspan="9" class="px-3 py-8 text-center text-gray-500 text-sm">Loading trader data...</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="mt-3 flex justify-between items-center text-xs text-gray-500">
-                    <span id="hyperdashStatus">Status: Loading...</span>
-                    <span>Trader: 0xb317...83ae</span>
-                </div>
+            <div class="mb-3 flex justify-end">
+                <a href="https://hyperdash.info/zh-CN/trader/0xb317d2bc2d3d2df5fa441b5bae0ab9d8b07283ae"
+                   target="_blank"
+                   class="bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 inline-flex items-center">
+                    🔗 Open in New Tab
+                </a>
             </div>
 
-            <!-- Iframe View -->
-            <div id="hyperdashIframeView" style="display: none;">
-                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                    <div class="flex items-start">
-                        <span class="text-yellow-600 mr-2">⚠️</span>
-                        <div class="text-xs text-yellow-800">
-                            <strong>Note:</strong> HyperDash has X-Frame-Options: SAMEORIGIN which may block iframe embedding from external domains. If the page doesn't load, use the "Open in New Tab" button below.
-                        </div>
-                    </div>
-                </div>
-
-                <div class="mb-3 flex justify-end">
-                    <a href="https://hyperdash.info/zh-CN/trader/0xb317d2bc2d3d2df5fa441b5bae0ab9d8b07283ae"
-                       target="_blank"
-                       class="bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 inline-flex items-center">
-                        🔗 Open in New Tab
-                    </a>
-                </div>
-
-                <div class="border-2 border-gray-200 rounded-lg overflow-hidden" style="height: 800px;">
-                    <iframe
-                        id="hyperdashIframe"
-                        src="https://hyperdash.info/zh-CN/trader/0xb317d2bc2d3d2df5fa441b5bae0ab9d8b07283ae"
-                        class="w-full h-full"
-                        frameborder="0"
-                        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
-                        loading="lazy">
-                    </iframe>
-                </div>
+            <div class="border-2 border-gray-200 rounded-lg overflow-hidden" style="height: 800px;">
+                <iframe
+                    id="hyperdashIframe"
+                    src="https://hyperdash.info/zh-CN/trader/0xb317d2bc2d3d2df5fa441b5bae0ab9d8b07283ae"
+                    class="w-full h-full"
+                    frameborder="0"
+                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                    loading="lazy">
+                </iframe>
             </div>
         </div>
 
@@ -700,7 +770,7 @@
             </div>
             <div class="log-terminal">
                 <div id="agentLogsList" class="space-y-1">
-                    <div class="text-gray-600 text-center py-8">Loading AI agent logs...</div>
+                    <div class="text-gray-400 text-center py-8">Loading AI agent logs...</div>
                 </div>
             </div>
             <div class="mt-2 text-xs text-gray-600 flex justify-between items-center">
@@ -1085,5 +1155,6 @@
     </div>
 
     <script src="/static/dashboard.js"></script>
+    <script src="/static/backtest_dashboard.js"></script>
 </body>
 </html>

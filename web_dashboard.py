@@ -1558,13 +1558,57 @@ def toggle_bot_pause():
             'message': 'Internal server error'
         }), 500
 
+@app.route('/api/validate-pin', methods=['POST'])
+def validate_pin_only():
+    """API endpoint to validate PIN without performing any action
+
+    Used for authenticating backtest operations and other sensitive actions
+    that don't directly control the bot.
+
+    Request Body:
+        pin: 6-digit PIN for authentication
+
+    Returns:
+        JSON response indicating if PIN is valid
+    """
+    try:
+        # Get request data
+        data = request.get_json() or {}
+        provided_pin = data.get('pin', '').strip()
+
+        # Get client IP for rate limiting
+        client_ip = request.remote_addr or request.headers.get('X-Forwarded-For', 'unknown')
+
+        # Validate 6-digit PIN
+        pin_validation = validate_6_digit_pin(provided_pin, client_ip)
+        if not pin_validation['success']:
+            status_code = 429 if pin_validation['blocked'] else 401
+            return jsonify({
+                'success': False,
+                'message': pin_validation['message'],
+                'blocked': pin_validation['blocked']
+            }), status_code
+
+        # PIN is valid
+        return jsonify({
+            'success': True,
+            'message': 'PIN validated successfully'
+        })
+
+    except Exception as e:
+        logger.error(f"Error in PIN validation endpoint: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Internal server error'
+        }), 500
+
 @app.route('/api/bot-pause-status')
 def get_bot_pause_status():
     """API endpoint to get current pause status
-    
+
     Checks for the existence of the pause flag file to determine
     if the bot is currently paused.
-    
+
     Returns:
         JSON response with pause status and timestamp
     """
@@ -2472,6 +2516,476 @@ def get_hyperdash_trader(trader_address):
 
     except Exception as e:
         logger.error(f"Error fetching HyperDash trader data: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+# ============================================================================
+# Backtesting API Endpoints
+# ============================================================================
+
+@app.route('/api/backtest/run', methods=['POST'])
+def run_backtest():
+    """API endpoint to run a backtest with custom configuration
+
+    Executes a backtest using the unified signal aggregator historical data.
+    Tests different weight combinations and trading parameters.
+
+    Request Body:
+        symbol: Trading pair symbol (default: 'SUIUSDC')
+        start_date: Start date YYYY-MM-DD (optional, defaults to available data)
+        end_date: End date YYYY-MM-DD (optional, defaults to available data)
+        days_back: Alternative to dates, number of days back (default: 30)
+        weights: Custom signal weights (optional)
+        initial_balance: Starting capital (default: 10000)
+        position_size_pct: Position size as % of balance (default: 0.10)
+        stop_loss_pct: Stop loss percentage (default: 0.03)
+        take_profit_pct: Take profit percentage (default: 0.06)
+
+    Returns:
+        JSON response with backtest results and performance metrics
+    """
+    try:
+        from backtest_unified_signals import UnifiedSignalBacktester, BacktestConfig
+        from datetime import datetime, timedelta
+        import sqlite3
+
+        data = request.get_json() or {}
+
+        # Extract parameters
+        symbol = data.get('symbol', 'SUIUSDC')
+        days_back = data.get('days_back', 30)
+        initial_balance = data.get('initial_balance', 10000.0)
+
+        # Use shared database with more historical data
+        db_path = 'shared/databases/trading_bot.db'
+
+        # Calculate date range from shared database
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("SELECT MIN(timestamp) as start, MAX(timestamp) as end FROM signals WHERE symbol = ?", (symbol,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result and result[0]:
+            start_date = data.get('start_date', result[0].split(' ')[0])
+            end_date = data.get('end_date', result[1].split(' ')[0])
+        else:
+            # Fallback to date range
+            end_date = data.get('end_date', datetime.now().strftime('%Y-%m-%d'))
+            start_date = data.get('start_date', (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d'))
+
+        # Create config
+        config = BacktestConfig(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            initial_balance=initial_balance,
+            position_size_pct=data.get('position_size_pct', 0.10),
+            stop_loss_pct=data.get('stop_loss_pct', 0.03),
+            take_profit_pct=data.get('take_profit_pct', 0.06),
+            weights=data.get('weights'),  # None will use defaults
+            buy_threshold=data.get('buy_threshold', 6.5),
+            sell_threshold=data.get('sell_threshold', 3.5),
+            min_confidence=data.get('min_confidence', 55.0)
+        )
+
+        # Run backtest with shared database
+        backtester = UnifiedSignalBacktester(db_path=db_path)
+        result = backtester.run_backtest(config)
+
+        # Convert result to dict
+        result_dict = {
+            'total_trades': result.total_trades,
+            'winning_trades': result.winning_trades,
+            'losing_trades': result.losing_trades,
+            'win_rate': result.win_rate,
+            'total_pnl': result.total_pnl,
+            'roi': result.roi,
+            'max_drawdown': result.max_drawdown,
+            'sharpe_ratio': result.sharpe_ratio,
+            'profit_factor': result.profit_factor,
+            'final_balance': result.final_balance,
+            'initial_balance': config.initial_balance,
+            'avg_win': result.trades[0]['pnl'] if result.trades else 0,  # Simplified
+            'avg_loss': result.trades[-1]['pnl'] if result.trades else 0,
+            'config': {
+                'symbol': config.symbol,
+                'start_date': config.start_date,
+                'end_date': config.end_date,
+                'weights': config.weights
+            }
+        }
+
+        logger.info(f"Backtest completed: {result.total_trades} trades, ROI: {result.roi:.2f}%")
+
+        return jsonify({
+            'success': True,
+            'data': result_dict
+        })
+
+    except Exception as e:
+        logger.error(f"Error running backtest: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/backtest/optimize', methods=['POST'])
+def run_backtest_optimization():
+    """API endpoint to run weight optimization with PIN protection
+
+    Tests multiple weight combinations to find the optimal signal weighting.
+    This is the most useful endpoint for strategy development.
+    Requires 6-digit PIN authentication.
+
+    Request Body:
+        pin: 6-digit PIN for authentication (required)
+        symbol: Trading pair symbol (default: 'SUIUSDC')
+        days_back: Number of days to backtest (default: 30)
+        initial_balance: Starting capital (default: 10000)
+
+    Returns:
+        JSON response with all tested configurations ranked by performance
+    """
+    try:
+        from backtest_unified_signals import run_weight_optimization
+        from datetime import datetime, timedelta
+
+        data = request.get_json() or {}
+
+        # Get request data and PIN
+        provided_pin = data.get('pin', '').strip()
+
+        # Get client IP for rate limiting
+        client_ip = request.remote_addr or request.headers.get('X-Forwarded-For', 'unknown')
+
+        # Validate 6-digit PIN
+        pin_validation = validate_6_digit_pin(provided_pin, client_ip)
+        if not pin_validation['success']:
+            status_code = 429 if pin_validation['blocked'] else 401
+            return jsonify({
+                'success': False,
+                'message': pin_validation['message'],
+                'blocked': pin_validation['blocked']
+            }), status_code
+
+        logger.info(f"🔒 Weight optimization authorized from IP: {client_ip}")
+
+        symbol = data.get('symbol', 'SUIUSDC')
+        days_back = data.get('days_back', 30)
+        initial_balance = data.get('initial_balance', 10000.0)
+
+        # Use shared database
+        db_path = 'shared/databases/trading_bot.db'
+
+        # Calculate date range from shared database
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("SELECT MIN(timestamp) as start, MAX(timestamp) as end FROM signals WHERE symbol = ?", (symbol,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result and result[0]:
+            start_date = result[0].split(' ')[0]
+            end_date = result[1].split(' ')[0]
+        else:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=days_back)).strftime('%Y-%m-%d')
+
+        # Run optimization
+        logger.info(f"Starting weight optimization for {symbol}...")
+        results_df = run_weight_optimization(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            initial_balance=initial_balance,
+            db_path=db_path
+        )
+
+        # Convert DataFrame to list of dicts
+        results = results_df.to_dict('records')
+
+        logger.info(f"Optimization completed: tested {len(results)} configurations")
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'results': results,
+                'best_by_roi': results[0] if results else None,
+                'total_tested': len(results)
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error running optimization: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/backtest/available-data')
+def check_backtest_data():
+    """API endpoint to check available backtesting data
+
+    Analyzes the database to determine what data is available for backtesting
+    including signal counts, date ranges, and signal distribution.
+
+    Returns:
+        JSON response with data availability analysis
+    """
+    try:
+        import sqlite3
+
+        # Use shared database with historical data
+        db_path = 'shared/databases/trading_bot.db'
+        conn = sqlite3.connect(db_path)
+
+        # Get signal statistics
+        query = """
+            SELECT
+                symbol,
+                COUNT(*) as signal_count,
+                MIN(timestamp) as first_signal,
+                MAX(timestamp) as last_signal,
+                SUM(CASE WHEN signal = 1 THEN 1 ELSE 0 END) as buy_count,
+                SUM(CASE WHEN signal = -1 THEN 1 ELSE 0 END) as sell_count,
+                SUM(CASE WHEN signal = 0 THEN 1 ELSE 0 END) as hold_count,
+                SUM(CASE WHEN rl_enhanced = 1 THEN 1 ELSE 0 END) as rl_enhanced_count
+            FROM signals
+            GROUP BY symbol
+        """
+
+        cursor = conn.execute(query)
+        signals_data = []
+        for row in cursor.fetchall():
+            signals_data.append({
+                'symbol': row[0],
+                'signal_count': row[1],
+                'first_signal': row[2],
+                'last_signal': row[3],
+                'buy_count': row[4],
+                'sell_count': row[5],
+                'hold_count': row[6],
+                'rl_enhanced_count': row[7]
+            })
+
+        # Get completed trades
+        query = """
+            SELECT
+                symbol,
+                COUNT(*) as trade_count,
+                MIN(timestamp) as first_trade,
+                MAX(timestamp) as last_trade,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
+                SUM(CASE WHEN pnl < 0 THEN 1 ELSE 0 END) as losing_trades,
+                SUM(pnl) as total_pnl
+            FROM trades
+            WHERE pnl IS NOT NULL
+            GROUP BY symbol
+        """
+
+        cursor = conn.execute(query)
+        trades_data = []
+        for row in cursor.fetchall():
+            trades_data.append({
+                'symbol': row[0],
+                'trade_count': row[1],
+                'first_trade': row[2],
+                'last_trade': row[3],
+                'winning_trades': row[4],
+                'losing_trades': row[5],
+                'total_pnl': row[6]
+            })
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'signals': signals_data,
+                'trades': trades_data,
+                'ready_for_backtest': len(signals_data) > 0,
+                'recommendation': 'Collect more data with BUY/SELL signals' if not signals_data or signals_data[0]['buy_count'] == 0 else 'Ready for backtesting'
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error checking backtest data: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/backtest/insights')
+def get_backtest_insights():
+    """API endpoint to get actionable insights from backtest results
+
+    Analyzes backtest results and provides actionable recommendations
+    for current trading decisions based on historical performance.
+
+    Returns:
+        JSON response with trading insights and recommendations
+    """
+    try:
+        from backtest_unified_signals import UnifiedSignalBacktester, BacktestConfig
+        from datetime import datetime, timedelta
+
+        # Run a quick backtest with current weights on shared database
+        symbol = 'SUIUSDC'
+        db_path = 'shared/databases/trading_bot.db'
+
+        # Get actual date range from database
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("SELECT MIN(timestamp) as start, MAX(timestamp) as end FROM signals WHERE symbol = ?", (symbol,))
+        result = cursor.fetchone()
+        conn.close()
+
+        if result and result[0]:
+            start_date = result[0].split(' ')[0]
+            end_date = result[1].split(' ')[0]
+        else:
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+
+        backtester = UnifiedSignalBacktester(db_path=db_path)
+        config = BacktestConfig(
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            initial_balance=10000.0
+        )
+
+        result = backtester.run_backtest(config)
+
+        # Generate actionable insights
+        insights = []
+
+        # Insight 1: Win Rate Analysis
+        if result.win_rate > 60:
+            insights.append({
+                'type': 'positive',
+                'category': 'win_rate',
+                'title': 'Strong Win Rate',
+                'message': f'Your strategy has a {result.win_rate:.1f}% win rate over the last 30 days. Current weights are performing well.',
+                'action': 'Continue with current weight configuration',
+                'confidence': 'high'
+            })
+        elif result.win_rate < 45:
+            insights.append({
+                'type': 'warning',
+                'category': 'win_rate',
+                'title': 'Low Win Rate',
+                'message': f'Win rate is only {result.win_rate:.1f}%. Consider adjusting signal weights or thresholds.',
+                'action': 'Run weight optimization to find better configuration',
+                'confidence': 'high'
+            })
+
+        # Insight 2: ROI Analysis
+        if result.roi > 15:
+            insights.append({
+                'type': 'positive',
+                'category': 'roi',
+                'title': 'Profitable Strategy',
+                'message': f'Strategy generated {result.roi:.1f}% ROI. Historical backtest suggests current approach is profitable.',
+                'action': 'Consider increasing position size slightly',
+                'confidence': 'medium'
+            })
+        elif result.roi < -5:
+            insights.append({
+                'type': 'danger',
+                'category': 'roi',
+                'title': 'Negative Returns',
+                'message': f'Strategy lost {abs(result.roi):.1f}% over backtest period. Immediate review recommended.',
+                'action': 'Pause trading and run optimization',
+                'confidence': 'high'
+            })
+
+        # Insight 3: Sharpe Ratio (Risk-Adjusted Returns)
+        if result.sharpe_ratio > 1.5:
+            insights.append({
+                'type': 'positive',
+                'category': 'risk',
+                'title': 'Good Risk-Adjusted Returns',
+                'message': f'Sharpe ratio of {result.sharpe_ratio:.2f} indicates good risk-adjusted performance.',
+                'action': 'Current risk management is appropriate',
+                'confidence': 'medium'
+            })
+        elif result.sharpe_ratio < 0.5:
+            insights.append({
+                'type': 'warning',
+                'category': 'risk',
+                'title': 'Poor Risk-Adjusted Returns',
+                'message': f'Sharpe ratio of {result.sharpe_ratio:.2f} suggests returns dont justify the risk.',
+                'action': 'Tighten stop losses or reduce position size',
+                'confidence': 'high'
+            })
+
+        # Insight 4: Max Drawdown
+        if result.max_drawdown > 20:
+            insights.append({
+                'type': 'danger',
+                'category': 'risk',
+                'title': 'High Drawdown Risk',
+                'message': f'Maximum drawdown of {result.max_drawdown:.1f}% is concerning. Account at risk.',
+                'action': 'Reduce position sizes and implement stricter stop losses',
+                'confidence': 'high'
+            })
+
+        # Insight 5: Trade Frequency
+        if result.total_trades < 5:
+            insights.append({
+                'type': 'info',
+                'category': 'activity',
+                'title': 'Low Trading Activity',
+                'message': f'Only {result.total_trades} trades in backtest period. Limited data for reliable insights.',
+                'action': 'Consider lowering buy/sell thresholds or collect more data',
+                'confidence': 'low'
+            })
+
+        # Insight 6: Current Signal Recommendation
+        db = get_database()
+        latest_signals = db.get_recent_signals(symbol, limit=1)
+        if latest_signals:
+            latest = latest_signals[0]
+            signal_map = {-1: 'SELL', 0: 'HOLD', 1: 'BUY'}
+            current_signal = signal_map.get(latest['signal'], 'HOLD')
+
+            insights.append({
+                'type': 'info',
+                'category': 'current_signal',
+                'title': f'Current Signal: {current_signal}',
+                'message': f'Based on {result.win_rate:.1f}% historical win rate, current {current_signal} signal has moderate confidence.',
+                'action': f'Execute {current_signal} if signal strength is above {config.min_confidence}%',
+                'confidence': 'medium' if result.win_rate > 50 else 'low'
+            })
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'insights': insights,
+                'backtest_summary': {
+                    'total_trades': result.total_trades,
+                    'win_rate': result.win_rate,
+                    'roi': result.roi,
+                    'sharpe_ratio': result.sharpe_ratio,
+                    'max_drawdown': result.max_drawdown,
+                    'period': f'{start_date} to {end_date}'
+                },
+                'generated_at': datetime.now().isoformat()
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error generating insights: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'error': str(e)
