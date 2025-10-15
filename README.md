@@ -46,8 +46,6 @@ It's like having a super-organized assistant who:
 
 ---
 
-## Advanced AI-Powered Trading System with Cross-Asset Correlation Analysis
-
 ## It's Like a Point-Scoring Game! 🎯
 
 Imagine you're trying to decide whether to buy or sell something (like trading cards), but you don't want to make a bad choice. So you have a special rule: you need to collect at least 3 points before you can make a trade.
