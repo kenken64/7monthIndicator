@@ -14,7 +14,7 @@ import os
 # Import signal source modules
 from cross_asset_correlation import CrossAssetAnalyzer
 from crewai_integration import get_crewai_integration
-from local_sentiment import LocalSentimentAnalyzer
+from openai_news_sentiment import OpenAINewsSentiment
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +43,10 @@ class SignalDataCollector:
             self.crewai_integration = None
 
         try:
-            self.sentiment_analyzer = LocalSentimentAnalyzer()
-            logger.info("✅ Sentiment analyzer initialized")
+            self.sentiment_analyzer = OpenAINewsSentiment()
+            logger.info("✅ OpenAI news sentiment analyzer initialized")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize sentiment analyzer: {e}")
+            logger.error(f"❌ Failed to initialize OpenAI news sentiment analyzer: {e}")
             self.sentiment_analyzer = None
 
         # Collection intervals (seconds)
@@ -229,73 +229,25 @@ class SignalDataCollector:
             return 'HOLD'  # Neutral/uncertain
 
     def _collect_news_sentiment(self):
-        """Collect and save news sentiment data"""
+        """Collect and save news sentiment data using OpenAI"""
         try:
             if not self.sentiment_analyzer:
-                logger.warning("Sentiment analyzer not available")
+                logger.warning("OpenAI sentiment analyzer not available")
                 return
 
-            logger.info("📰 Collecting news sentiment...")
+            logger.info("📰 Collecting SUI news sentiment using OpenAI...")
 
-            # Fetch recent crypto news headlines
-            news_headlines = self._fetch_crypto_news()
+            # Fetch news and analyze sentiment in one call (20 latest news items)
+            sentiment_result = self.sentiment_analyzer.get_news_and_sentiment(count=20)
 
-            if not news_headlines:
-                logger.warning("No news headlines available")
-                return
-
-            # Analyze sentiment
-            sentiment_result = self.sentiment_analyzer.analyze_sentiment(news_headlines)
-
-            # Convert sentiment to numeric score (-1 to 1)
-            sentiment_map = {
-                'Bullish': 0.7,
-                'Bearish': -0.7,
-                'Neutral': 0.0
-            }
-            sentiment_score = sentiment_map.get(sentiment_result['sentiment'], 0.0)
-
-            # Create news sentiment data
-            news_data = {
-                'timestamp': datetime.utcnow().isoformat(),
-                'sentiment': sentiment_result['sentiment'],
-                'sentiment_score': sentiment_score,
-                'confidence': sentiment_result['confidence'],
-                'article_count': len(news_headlines),
-                'scores': sentiment_result['scores'],
-                'explanation': sentiment_result['explanation'],
-                'headlines': news_headlines[:5]  # Save top 5 headlines
-            }
-
-            # Save to file
+            # Save to file (sentiment_result already has all the necessary fields)
             with open('/root/7monthIndicator/news_sentiment.json', 'w') as f:
-                json.dump(news_data, f, indent=2)
+                json.dump(sentiment_result, f, indent=2)
 
-            logger.info(f"✅ News sentiment saved: {sentiment_result['sentiment']} (score: {sentiment_score:.2f}, articles: {len(news_headlines)})")
+            logger.info(f"✅ News sentiment saved: {sentiment_result['sentiment']} (score: {sentiment_result['sentiment_score']:.2f}, articles: {sentiment_result['article_count']})")
 
         except Exception as e:
             logger.error(f"❌ Error collecting news sentiment: {e}")
-
-    def _fetch_crypto_news(self) -> list:
-        """Fetch crypto news headlines"""
-        try:
-            # Try to use existing news data or fetch from simple sources
-            # For now, use mock data as placeholder
-            # In production, this would use NewsAPI or similar service
-
-            mock_headlines = [
-                "Bitcoin continues steady gains as institutional interest grows",
-                "Cryptocurrency market shows resilience amid global uncertainty",
-                "Analysts predict continued growth in altcoin sector",
-                "Major exchange reports record trading volumes",
-                "Regulatory clarity brings optimism to crypto markets"
-            ]
-
-            return mock_headlines
-
-        except Exception as e:
-            logger.error(f"Error fetching news: {e}")
-            return []
 
     def force_collection(self):
         """Force immediate collection of all signals"""

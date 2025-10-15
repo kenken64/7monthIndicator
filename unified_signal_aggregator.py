@@ -26,8 +26,8 @@ class UnifiedSignalAggregator:
     # Signal weights (must sum to 1.0)
     WEIGHTS = {
         'technical': 0.25,      # Layer 1: Traditional indicators
-        'rl': 0.30,             # Layer 2: RL enhancement (highest weight)
-        'chart_analysis': 0.15, # OpenAI vision analysis
+        'rl': 0.15,             # Layer 2: RL enhancement
+        'chart_analysis': 0.30, # OpenAI vision analysis (highest weight)
         'crewai': 0.15,         # Multi-agent system
         'market_context': 0.10, # Cross-asset correlation
         'news_sentiment': 0.05  # News sentiment
@@ -421,21 +421,27 @@ class UnifiedSignalAggregator:
             sentiment_score = data.get('sentiment_score', 0.0)
             article_count = data.get('article_count', 0)
 
+            # Get confidence from OpenAI analysis (0-100)
+            ai_confidence = data.get('confidence', 50)
+
             # Convert sentiment to 0-10 scale
             # -1 (very bearish) -> 0
             # 0 (neutral) -> 5
             # +1 (very bullish) -> 10
             score = (sentiment_score + 1) * 5.0
 
-            # Confidence based on article count
-            if article_count >= 10:
-                confidence = 75.0
+            # Use AI confidence but adjust based on article count
+            # More articles = more reliable
+            if article_count >= 15:
+                confidence = min(100.0, ai_confidence * 1.1)  # Boost confidence
+            elif article_count >= 10:
+                confidence = ai_confidence
             elif article_count >= 5:
-                confidence = 60.0
+                confidence = ai_confidence * 0.9
             elif article_count >= 2:
-                confidence = 40.0
+                confidence = ai_confidence * 0.7
             else:
-                confidence = 20.0
+                confidence = max(20.0, ai_confidence * 0.5)  # Low article count = lower confidence
 
             return score, confidence
 
