@@ -39,10 +39,22 @@ This way, you don't make trades based on just one signal - you wait until multip
 
 A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs, RSI) enhanced with Reinforcement Learning (RL) to generate intelligent trading signals for Binance Futures markets with advanced position management and PnL-based decision making.
 
+## 🎉 Latest Updates (October 2025)
+
+### Enhanced Dashboard UI & Performance
+- **Modern Gradient Themes**: All dashboard sections now feature beautiful gradient color schemes with improved visual hierarchy
+- **API Rate Limit Protection**: Cross-asset correlation caching increased from 5 minutes to 4 hours (8x reduction in API calls)
+- **Reliable Market Data**: Smart fallback system ensures Market Context displays properly even during API rate limits
+- **Enhanced Error Handling**: Proper HTTP 429 handling for CoinGecko API with automatic cache fallback
+- **Professional Styling**: Enhanced CSS with section-specific themes:
+  - Chart Analysis (blue/purple), Market Context (green/teal), Signal Aggregation (indigo/purple)
+  - CrewAI Agents (orange/red), HyperDash Monitoring (cyan/blue), Spike Detections (red/pink)
+  - AI Logs (light theme), RL Status (purple/indigo), Performance Metrics (emerald/teal)
+
 ## 🚨 IMPORTANT SAFETY WARNINGS
 
 - **Start with Testnet**: Always test thoroughly on testnet first
-- **Use Small Risk %**: Start with 1-2% risk per trade maximum  
+- **Use Small Risk %**: Start with 1-2% risk per trade maximum
 - **Monitor Closely**: Never leave the bot completely unattended
 - **Set Stop Losses**: Consider manual stop losses for major positions
 - **Check Market Hours**: Crypto markets are 24/7, plan accordingly
@@ -58,14 +70,17 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
 
 ### 🧠 Advanced AI Enhancement Features
 - **Cross-Asset Correlation Analysis**: Enhanced market awareness using BTC/ETH trends and market context
+  - **Optimized API Usage**: 4-hour caching system (8x reduction in API calls) to prevent rate limiting
+  - **Robust Error Handling**: Automatic fallback to cached data during API rate limits (HTTP 429)
+  - **Smart Cache Management**: Persistent cache across service restarts for reliable data availability
 - **Reinforcement Learning Integration**: Q-Learning agent with enhanced state representation
-- **Market Context Intelligence**: 
+- **Market Context Intelligence**:
   - BTC dominance analysis and correlation patterns
   - Fear & Greed Index integration for market sentiment
   - Volatility regime detection (high/medium/low)
   - Market trend classification (bullish/bearish/neutral)
 - **Smart Position Management**: PnL-based decision making with cross-asset confirmation
-- **Enhanced Risk Management**: 
+- **Enhanced Risk Management**:
   - Only closes positions on HOLD signals if PnL is negative (keeps profitable positions)
   - Cross-asset momentum confirmation before position changes
   - Market regime-based risk adjustment
@@ -84,12 +99,23 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
 
 ### 🌐 Enhanced Web Dashboard
 - **Real-time Dashboard**: "CryptoCurrency AI Trading Bot Dashboard (Experimental)" at http://your-ip:5000
-- **🌍 Market Context Section**: NEW! Real-time cross-asset correlation display
+- **🎨 Modern UI Design**: Beautifully styled sections with gradient themes and enhanced visual hierarchy
+  - **Chart Analysis**: Blue/purple gradient theme with professional candlestick charts
+  - **Market Context**: Green/teal gradient theme for cross-asset correlation data
+  - **Unified Signal Aggregation**: Indigo/purple gradient with multi-layer signal display
+  - **CrewAI Multi-Agent System**: Orange/red gradient for AI agent insights
+  - **HyperDash Trader Monitoring**: Cyan/blue gradient for agent performance tracking
+  - **Spike Detections**: Red/pink gradient for critical market events
+  - **AI Agent Logs**: Light theme with enhanced readability and black text
+  - **RL Bot Status**: Purple/indigo gradient for reinforcement learning metrics
+  - **Performance Metrics**: Emerald/teal gradient for trading statistics
+- **🌍 Market Context Section**: Real-time cross-asset correlation display
   - Live BTC/ETH prices with 24h changes and color-coded indicators
   - BTC Dominance percentage tracking
   - Fear & Greed Index with color-coded sentiment levels
   - Market trend indicators (Bullish/Bearish/Neutral)
   - Cross-asset signal states (BTC Trend, Market Regime, Breadth)
+  - **4-hour API caching** to prevent rate limiting and ensure reliable data display
 - **Chart Visualization**: Live SUI/USDC chart display with analysis results
 - **Mobile Responsive**: Optimized for desktop, tablet, and mobile devices
 - **Live Analysis Display**: OpenAI recommendations, confidence levels, and market insights
@@ -532,7 +558,7 @@ Supported intervals: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d
 - **"No chart analysis data"**: Bot runs every 15 minutes, wait for first cycle
 - **Chart not displaying**: Check web dashboard at `/api/chart-image` endpoint
 
-#### Web Dashboard Issues  
+#### Web Dashboard Issues
 - **Dashboard not accessible**: Check if port 5000 is open and not blocked by firewall
 - **Chart image not loading**: Verify chart analysis bot is running: `./start_chart_bot.sh status`
 - **PIN protection not working**: Ensure `BOT_CONTROL_PIN` is set in `.env` file
@@ -540,6 +566,11 @@ Supported intervals: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d
 - **Market news not showing**: Verify `NEWS_API_KEY` is set in `.env` file
 - **Sentiment analysis not working**: Check OpenAI API key and ensure sufficient credits
 - **News pagination errors**: Restart web dashboard: `./start_web_dashboard.sh restart`
+- **Market Context showing N/A values**: CoinGecko API rate limited (429 error)
+  - Wait for rate limit to reset (24 hours from first exceeding limit)
+  - System uses 4-hour caching to minimize API calls
+  - Cached data persists even after restarts
+  - Check logs: `tail -f logs/web_dashboard.log` for API status
 
 #### Database Issues  
 - **"Database locked"**: Stop bot before running retraining: `./start_rl_bot.sh stop`
@@ -616,14 +647,17 @@ This trading bot system now includes three integrated components:
 
 ### **System Features**
 - **📊 Live Charts**: Real-time SUI/USDC charts with AI analysis
+- **🎨 Modern UI**: Beautifully designed dashboard with gradient themes and enhanced visual hierarchy
 - **🤖 Multi-Bot Management**: Unified control of all components
-- **📱 Mobile Responsive**: Works on all devices  
+- **📱 Mobile Responsive**: Works on all devices
 - **🔒 Secure Access**: PIN-protected controls
 - **📝 Live Logging**: Real-time log streaming from all bots
 - **⏰ Automated Analysis**: Chart analysis every 15 minutes
 - **🧠 AI Integration**: OpenAI GPT-4o powered recommendations
 - **📰 Smart News**: Paginated cryptocurrency news with AI sentiment analysis
 - **📈 Market Sentiment**: Real-time bullish/bearish indicators with confidence ratings
+- **🌍 Cross-Asset Intelligence**: BTC/ETH correlation analysis with optimized 4-hour caching
+- **⚡ Rate Limit Protection**: Smart caching system prevents API rate limiting issues
 
 ## 🚀 **Quick Reference: Multi-Claude Code Launch**
 
