@@ -592,45 +592,76 @@ def get_chart_data(symbol):
 @app.route('/api/system-stats')
 def get_system_stats():
     """API endpoint to get system statistics
-    
+
     Returns overall system health and activity metrics including:
     - Total signals and trades count
-    - Open position count
+    - Open position count (from live Binance API)
     - Last signal timestamp
     - Available trading symbols
-    
+
     Returns:
         JSON response with system statistics
     """
+    from binance.client import Client
+    from dotenv import load_dotenv
+
+    load_dotenv()
     db = get_database()
-    
+
     try:
         with db.get_connection() as conn:
             # Get total counts
             stats = {}
-            
+
             cursor = conn.execute('SELECT COUNT(*) as count FROM signals')
             stats['total_signals'] = cursor.fetchone()['count']
-            
+
             cursor = conn.execute('SELECT COUNT(*) as count FROM trades')
             stats['total_trades'] = cursor.fetchone()['count']
-            
-            cursor = conn.execute('SELECT COUNT(*) as count FROM trades WHERE status = "OPEN"')
-            stats['open_trades'] = cursor.fetchone()['count']
-            
+
+            # Get live open positions count from Binance API instead of database
+            open_positions_count = 0
+            try:
+                api_key = os.getenv('BINANCE_API_KEY')
+                secret_key = os.getenv('BINANCE_SECRET_KEY')
+
+                if api_key and secret_key:
+                    client = Client(api_key, secret_key, testnet=False)
+                    live_positions = client.futures_position_information()
+
+                    # Count non-zero positions from Binance
+                    for pos in live_positions:
+                        if float(pos['positionAmt']) != 0:
+                            open_positions_count += 1
+
+                    logger.debug(f"Found {open_positions_count} live open positions from Binance")
+                else:
+                    # Fallback to database if no API credentials
+                    cursor = conn.execute('SELECT COUNT(*) as count FROM trades WHERE status = "OPEN"')
+                    open_positions_count = cursor.fetchone()['count']
+                    logger.debug(f"Using database count: {open_positions_count} open trades")
+
+            except Exception as api_error:
+                logger.warning(f"Error fetching live positions count, using database: {api_error}")
+                # Fallback to database on error
+                cursor = conn.execute('SELECT COUNT(*) as count FROM trades WHERE status = "OPEN"')
+                open_positions_count = cursor.fetchone()['count']
+
+            stats['open_trades'] = open_positions_count
+
             # Get last signal time
             cursor = conn.execute('SELECT MAX(timestamp) as last_signal FROM signals')
             stats['last_signal'] = cursor.fetchone()['last_signal']
-            
+
             # Get symbols
             cursor = conn.execute('SELECT DISTINCT symbol FROM signals ORDER BY symbol')
             stats['symbols'] = [row['symbol'] for row in cursor.fetchall()]
-            
+
             return jsonify({
                 'success': True,
                 'data': stats
             })
-            
+
     except Exception as e:
         logger.error(f"Error getting system stats: {e}")
         return jsonify({

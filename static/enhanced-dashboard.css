@@ -1503,31 +1503,38 @@
     @apply relative py-1 px-2 rounded;
     @apply font-mono text-xs;
     @apply transition-colors duration-200;
-    @apply hover:bg-gray-100;
+    @apply hover:bg-gray-800;
+    @apply text-gray-200;
 }
 
 .log-entry.log-info {
-    @apply text-blue-700;
+    @apply text-blue-400;
 }
 
 .log-entry.log-warning {
-    @apply text-yellow-700;
+    @apply text-yellow-400;
 }
 
 .log-entry.log-error {
-    @apply text-red-700;
+    @apply text-red-400;
 }
 
 .log-entry.log-success {
-    @apply text-green-700;
+    @apply text-green-400;
+}
+
+/* Log Timestamp Styling - White font */
+.log-entry .log-timestamp {
+    @apply text-white font-semibold;
 }
 
 /* Log Terminal Effect */
 .log-terminal {
-    @apply bg-white rounded-lg p-4;
+    background-color: #000000 !important;
+    @apply rounded-lg p-4;
     @apply font-mono text-xs;
     @apply overflow-y-auto max-h-96;
-    @apply border-2 border-slate-200;
+    @apply border-2 border-slate-700;
     @apply shadow-inner;
 }
 
@@ -1536,11 +1543,11 @@
 }
 
 .log-terminal::-webkit-scrollbar-track {
-    @apply bg-gray-100 rounded;
+    @apply bg-gray-800 rounded;
 }
 
 .log-terminal::-webkit-scrollbar-thumb {
-    @apply bg-gray-400 rounded hover:bg-gray-500;
+    @apply bg-gray-600 rounded hover:bg-gray-500;
 }
 
 /* ============================================================================
@@ -1744,3 +1751,181 @@
         }
     }
 }
+
+/* ============================================================================
+   Backtesting Section Styles
+   ============================================================================ */
+
+/* Backtest Card */
+.backtest-card {
+    @apply bg-gradient-to-br from-white to-teal-50;
+    @apply border border-teal-200;
+}
+
+/* Backtest Data Cards */
+.backtest-data-card {
+    @apply bg-white rounded-lg p-4 shadow-sm;
+    @apply border border-teal-100;
+    @apply hover:shadow-md hover:border-teal-300;
+    @apply transition-all duration-200;
+}
+
+/* Backtest Action Buttons */
+.backtest-action-btn {
+    @apply flex items-center justify-center;
+    @apply px-6 py-4 rounded-lg;
+    @apply font-semibold text-white;
+    @apply shadow-md hover:shadow-lg;
+    @apply transform transition-all duration-200;
+    @apply hover:scale-105 active:scale-95;
+}
+
+.backtest-action-btn.btn-blue {
+    @apply bg-gradient-to-r from-blue-500 to-blue-600;
+    @apply hover:from-blue-600 hover:to-blue-700;
+}
+
+.backtest-action-btn.btn-purple {
+    @apply bg-gradient-to-r from-purple-500 to-purple-600;
+    @apply hover:from-purple-600 hover:to-purple-700;
+}
+
+.backtest-action-btn:disabled {
+    @apply opacity-50 cursor-not-allowed;
+    @apply hover:scale-100;
+}
+
+/* Backtest Metric Cards */
+.backtest-metric-card {
+    @apply bg-white rounded-lg p-3 shadow-sm;
+    @apply border border-gray-200;
+    @apply text-center;
+    @apply transition-all duration-200;
+    @apply hover:shadow-md;
+}
+
+.backtest-metric-card .text-xl {
+    @apply transition-all duration-300;
+}
+
+/* Insight Cards */
+.insight-card {
+    @apply bg-white rounded-lg p-4;
+    @apply border-l-4;
+    @apply shadow-sm hover:shadow-md;
+    @apply transition-all duration-200;
+}
+
+.insight-card.insight-positive {
+    @apply border-green-500 bg-green-50;
+}
+
+.insight-card.insight-warning {
+    @apply border-yellow-500 bg-yellow-50;
+}
+
+.insight-card.insight-danger {
+    @apply border-red-500 bg-red-50;
+}
+
+.insight-card.insight-info {
+    @apply border-blue-500 bg-blue-50;
+}
+
+.insight-icon {
+    @apply w-10 h-10 rounded-full;
+    @apply flex items-center justify-center;
+    @apply text-xl font-bold;
+}
+
+.insight-icon.icon-positive {
+    @apply bg-green-500 text-white;
+}
+
+.insight-icon.icon-warning {
+    @apply bg-yellow-500 text-white;
+}
+
+.insight-icon.icon-danger {
+    @apply bg-red-500 text-white;
+}
+
+.insight-icon.icon-info {
+    @apply bg-blue-500 text-white;
+}
+
+.insight-title {
+    @apply text-sm font-semibold text-gray-900 mb-1;
+}
+
+.insight-message {
+    @apply text-sm text-gray-700 mb-2;
+}
+
+.insight-action {
+    @apply text-xs font-medium;
+    @apply px-3 py-1 rounded-full;
+    @apply bg-white shadow-sm;
+}
+
+.insight-confidence {
+    @apply text-xs uppercase tracking-wide font-bold;
+}
+
+.insight-confidence.confidence-high {
+    @apply text-green-600;
+}
+
+.insight-confidence.confidence-medium {
+    @apply text-yellow-600;
+}
+
+.insight-confidence.confidence-low {
+    @apply text-gray-600;
+}
+
+/* Responsive Design for Backtest Section */
+@media (max-width: 640px) {
+    .backtest-card {
+        @apply p-3;
+    }
+
+    .backtest-data-card,
+    .backtest-metric-card {
+        @apply p-2;
+    }
+
+    .backtest-action-btn {
+        @apply px-4 py-3 text-sm;
+    }
+
+    .insight-card {
+        @apply p-3;
+    }
+
+    .insight-icon {
+        @apply w-8 h-8 text-lg;
+    }
+}
+
+/* Loading State for Backtest */
+#backtestLoading .loading-spinner {
+    @apply border-t-teal-500;
+}
+
+/* Animation for Backtest Results */
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.backtest-results-enter {
+    animation: slideInUp 0.4s ease-out;
+}
+

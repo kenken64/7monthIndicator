@@ -641,7 +641,7 @@ class BinanceFuturesBot:
                             'mark_price': mark_price,
                             'unrealized_pnl': unrealized_pnl,
                             'liquidation_price': float(pos['liquidationPrice']) if pos['liquidationPrice'] != '0' else 0,
-                            'margin_type': pos['marginType'],
+                            'margin_type': pos.get('marginType', 'CROSSED'),
                             'isolated_wallet': float(pos['isolatedWallet']) if pos['isolatedWallet'] else 0,
                             'percentage': pnl_percentage,
                             'position_amt': position_amt  # Raw position amount with sign

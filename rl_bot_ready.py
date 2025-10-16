@@ -149,12 +149,20 @@ class TelegramNotifier:
                 pnl_emoji = "🟢" if position_info.get('unrealized_pnl', 0) > 0 else "🔴"
                 pos_status = f"\n📍 Current Position: {position_info['side']} {position_info.get('size', 0):.1f}"
                 pos_status += f"\n💰 PnL: {pnl_emoji} ${position_info.get('unrealized_pnl', 0):.2f}"
-            
+
+            # Determine strength display based on unified signal availability
+            if signal_data.get('unified_details'):
+                # Use unified 0-10 scale
+                strength_display = f"{signal_data['unified_details']['strength']:.1f}/10"
+            else:
+                # Use legacy 0-5 scale
+                strength_display = f"{signal_data.get('strength', 0)}/5"
+
             # Create message
             message = f"""<b>🚀 SUI/USDC RL Trading Signal</b>
-            
+
 {signal_emoji} <b>Signal: {signal_name}</b>
-💪 Strength: {signal_data.get('strength', 0)}/5
+💪 Strength: {strength_display}
 💹 Price: ${current_price:.4f}
 {rl_status}
 {pos_status}
@@ -329,7 +337,8 @@ class RLEnhancedBinanceFuturesBot:
         # Unified Signal Aggregator - Combines all signal sources
         self.unified_aggregator = None
         self.signal_collector = None
-        if UNIFIED_SIGNALS_ENABLED:
+        self.unified_signals_enabled = UNIFIED_SIGNALS_ENABLED
+        if self.unified_signals_enabled:
             try:
                 self.unified_aggregator = create_aggregator()
                 self.signal_collector = SignalDataCollector()
@@ -337,7 +346,7 @@ class RLEnhancedBinanceFuturesBot:
                 logger.info("📊 Unified Signal Aggregator initialized and data collection started")
             except Exception as e:
                 logger.error(f"❌ Failed to initialize Unified Signal Aggregator: {e}")
-                UNIFIED_SIGNALS_ENABLED = False
+                self.unified_signals_enabled = False
 
         logger.info(f"🤖 RL-Enhanced Bot initialized for {symbol}")
         logger.info(f"🛡️ SAFETY SETTINGS: {position_percentage}% position size (vs 51% original)")
@@ -354,7 +363,7 @@ class RLEnhancedBinanceFuturesBot:
             logger.error(f"⚠️ Startup reconciliation failed: {e}")
         
         # Send startup notification to Telegram
-        unified_status = "ACTIVE" if (UNIFIED_SIGNALS_ENABLED and self.unified_aggregator) else "DISABLED"
+        unified_status = "ACTIVE" if (self.unified_signals_enabled and self.unified_aggregator) else "DISABLED"
         startup_message = f"""<b>🤖 RL Trading Bot Started</b>
 
 📊 Symbol: {symbol}
@@ -511,7 +520,7 @@ Signal Sources:
                 logger.error(f"❌ RL Enhancement failed: {e}")
 
         # Use Unified Signal Aggregator if available
-        if UNIFIED_SIGNALS_ENABLED and self.unified_aggregator:
+        if self.unified_signals_enabled and self.unified_aggregator:
             try:
                 # Convert traditional signal to format for aggregator
                 tech_action = 'BUY' if original_signal_data['signal'] > 0 else 'SELL' if original_signal_data['signal'] < 0 else 'HOLD'
@@ -1337,21 +1346,45 @@ Signal Sources:
                     else:
                         logger.info("🚫 RL exit signal detected but cannot close position - not opened by this bot")
                 
-                # Check for HOLD signal to close existing positions
+                # DISABLED: Signal-based position closures
+                # These functions were bypassing TP/SL risk management by closing positions
+                # prematurely when signals changed. Positions should ONLY be closed by:
+                # 1. Take Profit orders reaching 15% target
+                # 2. Stop Loss orders hitting 5% limit
+                # 3. Manual intervention
+                # 4. RL-based exit signals (which use more sophisticated criteria)
+
+                # Signal changes are informational only - they do NOT justify closing positions
+                # that have properly set TP/SL orders. Premature signal-based closures lead to:
+                # - Missing profit targets
+                # - Taking losses before SL is hit
+                # - Excessive trading frequency
+                # - Reduced overall profitability
+
+                # COMMENTED OUT: Check for HOLD signal to close existing positions
+                # if signal_data['signal'] == 0 and position_info['side']:
+                #     logger.info(f"🛑 HOLD signal detected with open {position_info['side']} position")
+                #     self.close_position_on_hold_signal(position_info, current_price)
+
+                # COMMENTED OUT: Check for opposite signal to close existing positions with negative PnL
+                # elif signal_data['signal'] != 0 and position_info['side']:
+                #     position_closed = self.close_position_on_opposite_signal(position_info, signal_data['signal'], current_price)
+                #
+                #     # If position was closed, we can now execute a new trade
+                #     if position_closed and signal_data['strength'] > 0:
+                #         logger.info(f"📈 Executing new trade after closing opposite position based on {signal_name} signal...")
+                #         self.execute_trade(signal_data, current_price)
+                #     elif not position_closed:
+                #         logger.info(f"✅ {signal_name} signal detected but keeping {position_info['side']} position (positive PnL). No new trade will be executed.")
+
+                # Log signal changes for informational purposes without closing positions
                 if signal_data['signal'] == 0 and position_info['side']:
-                    logger.info(f"🛑 HOLD signal detected with open {position_info['side']} position")
-                    self.close_position_on_hold_signal(position_info, current_price)
-                
-                # Check for opposite signal to close existing positions with negative PnL
+                    logger.info(f"ℹ️ HOLD signal detected with open {position_info['side']} position - keeping position open, respecting TP/SL orders")
                 elif signal_data['signal'] != 0 and position_info['side']:
-                    position_closed = self.close_position_on_opposite_signal(position_info, signal_data['signal'], current_price)
-                    
-                    # If position was closed, we can now execute a new trade
-                    if position_closed and signal_data['strength'] > 0:
-                        logger.info(f"📈 Executing new trade after closing opposite position based on {signal_name} signal...")
-                        self.execute_trade(signal_data, current_price)
-                    elif not position_closed:
-                        logger.info(f"✅ {signal_name} signal detected but keeping {position_info['side']} position (positive PnL). No new trade will be executed.")
+                    signal_name = "BUY" if signal_data['signal'] > 0 else "SELL"
+                    if (position_info['side'] == 'LONG' and signal_data['signal'] < 0) or \
+                       (position_info['side'] == 'SHORT' and signal_data['signal'] > 0):
+                        logger.info(f"ℹ️ Opposite {signal_name} signal detected with open {position_info['side']} position - keeping position open, respecting TP/SL orders")
                 
                 # Execute trades based on signals (no current position)
                 elif signal_data['signal'] != 0 and signal_data['strength'] > 0:
