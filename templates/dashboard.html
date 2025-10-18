@@ -66,6 +66,28 @@
     </header>
 
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- API Connectivity Status -->
+        <div class="mb-4 bg-white rounded-lg shadow p-4">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div class="text-sm font-medium text-gray-700">API Connectivity:</div>
+                <div class="flex items-center space-x-4 flex-wrap gap-2">
+                    <!-- Binance Status -->
+                    <div class="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-gray-50" id="binanceStatus">
+                        <div class="w-2 h-2 rounded-full animate-pulse bg-gray-400" id="binanceIndicator"></div>
+                        <span class="text-sm font-medium text-gray-700">Binance</span>
+                        <span class="text-xs text-gray-500" id="binanceLatency">-</span>
+                    </div>
+
+                    <!-- OpenAI Status -->
+                    <div class="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-gray-50" id="openaiStatus">
+                        <div class="w-2 h-2 rounded-full animate-pulse bg-gray-400" id="openaiIndicator"></div>
+                        <span class="text-sm font-medium text-gray-700">OpenAI</span>
+                        <span class="text-xs text-gray-500" id="openaiLatency">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- System Status - Enhanced Design -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <!-- Total Signals Card -->

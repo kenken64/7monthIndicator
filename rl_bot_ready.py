@@ -311,8 +311,8 @@ class RLEnhancedBinanceFuturesBot:
         self.symbol = symbol
         self.leverage = leverage
         self.position_percentage = position_percentage  # 2% instead of 51%!
-        self.take_profit_percent = 15.0  # 15% profit target
-        self.stop_loss_percent = 5.0    # 5% loss limit
+        self.take_profit_percent = 8.0  # 8% profit target
+        self.stop_loss_percent = 3.5    # 3.5% loss limit
         
         # State tracking - Monitor current positions and entry points
         self.position_side = None  # LONG, SHORT, or None

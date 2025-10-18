@@ -462,7 +462,14 @@ def get_open_positions(symbol):
             if api_key and secret_key:
                 client = Client(api_key, secret_key, testnet=False)
                 live_positions = client.futures_position_information()
-                
+
+                # Get open orders to find TP/SL orders
+                try:
+                    open_orders = client.futures_get_open_orders(symbol=symbol)
+                except Exception as e:
+                    logger.warning(f"Could not fetch open orders: {e}")
+                    open_orders = []
+
                 # Filter for requested symbol and non-zero positions from Binance
                 binance_positions = []
                 for pos in live_positions:
@@ -470,7 +477,7 @@ def get_open_positions(symbol):
                         position_amt = float(pos['positionAmt'])
                         entry_price = float(pos['entryPrice'])
                         mark_price = float(pos['markPrice'])
-                        
+
                         # Calculate PnL percentage with leverage (assuming 50x)
                         if entry_price > 0:
                             if position_amt > 0:  # LONG
@@ -479,7 +486,17 @@ def get_open_positions(symbol):
                                 pnl_percentage = ((entry_price - mark_price) / entry_price) * 100 * 50
                         else:
                             pnl_percentage = 0
-                        
+
+                        # Find TP/SL orders for this position
+                        take_profit_price = None
+                        stop_loss_price = None
+
+                        for order in open_orders:
+                            if order['type'] == 'TAKE_PROFIT_MARKET' or order['type'] == 'TAKE_PROFIT':
+                                take_profit_price = float(order.get('stopPrice', order.get('price', 0)))
+                            elif order['type'] == 'STOP_MARKET' or order['type'] == 'STOP':
+                                stop_loss_price = float(order.get('stopPrice', order.get('price', 0)))
+
                         binance_positions.append({
                             'symbol': pos['symbol'],
                             'side': 'LONG' if position_amt > 0 else 'SHORT',
@@ -490,6 +507,8 @@ def get_open_positions(symbol):
                             'liquidation_price': float(pos['liquidationPrice']) if pos['liquidationPrice'] != '0' else 0,
                             'percentage': pnl_percentage,
                             'margin_type': pos.get('marginType', 'UNKNOWN'),
+                            'take_profit_price': take_profit_price,
+                            'stop_loss_price': stop_loss_price,
                             'source': 'binance_live'
                         })
                 
@@ -1670,6 +1689,75 @@ def get_bot_pause_status():
             'success': False,
             'error': str(e)
         }), 500
+
+@app.route('/api/connectivity-status')
+def get_connectivity_status():
+    """API endpoint to check connectivity status of external APIs
+
+    Tests connectivity to:
+    - Binance API (futures account endpoint)
+    - OpenAI API (models list endpoint)
+
+    Returns:
+        JSON response with connectivity status for each service
+    """
+    from binance.client import Client
+    import openai
+
+    status = {
+        'binance': {'connected': False, 'error': None, 'latency_ms': None},
+        'openai': {'connected': False, 'error': None, 'latency_ms': None}
+    }
+
+    # Test Binance API
+    try:
+        api_key = os.getenv('BINANCE_API_KEY')
+        secret_key = os.getenv('BINANCE_SECRET_KEY')
+
+        if api_key and secret_key:
+            start_time = time.time()
+            client = Client(api_key, secret_key, testnet=False)
+            # Test with a simple API call
+            client.futures_account()
+            latency = (time.time() - start_time) * 1000
+            status['binance']['connected'] = True
+            status['binance']['latency_ms'] = round(latency, 2)
+        else:
+            status['binance']['error'] = 'API credentials not configured'
+    except Exception as e:
+        status['binance']['error'] = str(e)[:100]  # Limit error message length
+
+    # Test OpenAI API
+    try:
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+
+        if openai_api_key:
+            start_time = time.time()
+            headers = {
+                "Authorization": f"Bearer {openai_api_key}",
+                "Content-Type": "application/json"
+            }
+            response = requests.get(
+                "https://api.openai.com/v1/models",
+                headers=headers,
+                timeout=5
+            )
+            latency = (time.time() - start_time) * 1000
+
+            if response.status_code == 200:
+                status['openai']['connected'] = True
+                status['openai']['latency_ms'] = round(latency, 2)
+            else:
+                status['openai']['error'] = f"HTTP {response.status_code}"
+        else:
+            status['openai']['error'] = 'API key not configured'
+    except Exception as e:
+        status['openai']['error'] = str(e)[:100]  # Limit error message length
+
+    return jsonify({
+        'success': True,
+        'data': status
+    })
 
 @app.route('/api/rl-bot-status')
 def get_rl_bot_status():

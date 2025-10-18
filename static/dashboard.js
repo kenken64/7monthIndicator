@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', function() {
     loadSystemStats();
     loadDashboardData();
     loadCrewAIData(); // Load AI agent data
+    loadConnectivityStatus(); // Load API connectivity status
 
     // Set up event listeners
     document.getElementById('refreshBtn').addEventListener('click', refreshDashboard);
@@ -32,6 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
     setInterval(refreshDashboard, 30000);
     setInterval(loadPauseStatus, 10000); // Check pause status more frequently
     setInterval(loadCrewAIData, 30000); // Refresh CrewAI data every 30 seconds
+    setInterval(loadConnectivityStatus, 30000); // Check API connectivity every 30 seconds
 
     // Load chart analysis data
     loadChartAnalysis();
@@ -220,6 +222,52 @@ async function loadSystemStats() {
         }
     } catch (error) {
         console.error('Error loading system stats:', error);
+    }
+}
+
+async function loadConnectivityStatus() {
+    try {
+        const response = await fetch('/api/connectivity-status');
+        const data = await response.json();
+
+        if (data.success) {
+            // Update Binance status
+            const binanceIndicator = document.getElementById('binanceIndicator');
+            const binanceLatency = document.getElementById('binanceLatency');
+            const binanceStatus = document.getElementById('binanceStatus');
+
+            if (data.data.binance.connected) {
+                binanceIndicator.className = 'w-2 h-2 rounded-full bg-green-500';
+                binanceLatency.textContent = `${data.data.binance.latency_ms}ms`;
+                binanceStatus.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-green-50';
+            } else {
+                binanceIndicator.className = 'w-2 h-2 rounded-full bg-red-500';
+                binanceLatency.textContent = data.data.binance.error ? 'Error' : 'Disconnected';
+                binanceLatency.title = data.data.binance.error || 'Not connected';
+                binanceStatus.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-red-50';
+            }
+
+            // Update OpenAI status
+            const openaiIndicator = document.getElementById('openaiIndicator');
+            const openaiLatency = document.getElementById('openaiLatency');
+            const openaiStatus = document.getElementById('openaiStatus');
+
+            if (data.data.openai.connected) {
+                openaiIndicator.className = 'w-2 h-2 rounded-full bg-green-500';
+                openaiLatency.textContent = `${data.data.openai.latency_ms}ms`;
+                openaiStatus.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-green-50';
+            } else {
+                openaiIndicator.className = 'w-2 h-2 rounded-full bg-red-500';
+                openaiLatency.textContent = data.data.openai.error ? 'Error' : 'Disconnected';
+                openaiLatency.title = data.data.openai.error || 'Not connected';
+                openaiStatus.className = 'flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-red-50';
+            }
+        }
+    } catch (error) {
+        console.error('Error loading connectivity status:', error);
+        // Set both to error state
+        document.getElementById('binanceIndicator').className = 'w-2 h-2 rounded-full bg-gray-400';
+        document.getElementById('openaiIndicator').className = 'w-2 h-2 rounded-full bg-gray-400';
     }
 }
 
@@ -774,6 +822,8 @@ async function loadOpenPositions() {
                     unrealized_pnl: pos.unrealized_pnl,
                     percentage: pos.percentage,
                     liquidation_price: pos.liquidation_price,
+                    take_profit_price: pos.take_profit_price,
+                    stop_loss_price: pos.stop_loss_price,
                     source: 'binance_live'
                 })));
             }
@@ -808,6 +858,20 @@ async function loadOpenPositions() {
                                         <span class="text-gray-600">PnL:</span>
                                         <span class="font-semibold ml-1 ${pnlColor}">$${pos.unrealized_pnl.toFixed(2)} (${pos.percentage.toFixed(2)}%)</span>
                                     </div>
+                                    ${pos.take_profit_price ? `
+                                    <div>
+                                        <span class="text-gray-600">TP:</span>
+                                        <span class="font-semibold ml-1 text-green-600">$${pos.take_profit_price.toFixed(4)}
+                                        <span class="text-xs">(${pos.side === 'LONG' ? '+' : '-'}${Math.abs(((pos.take_profit_price - pos.entry_price) / pos.entry_price) * 100).toFixed(1)}%)</span></span>
+                                    </div>
+                                    ` : ''}
+                                    ${pos.stop_loss_price ? `
+                                    <div>
+                                        <span class="text-gray-600">SL:</span>
+                                        <span class="font-semibold ml-1 text-red-600">$${pos.stop_loss_price.toFixed(4)}
+                                        <span class="text-xs">(-${Math.abs(((pos.entry_price - pos.stop_loss_price) / pos.entry_price) * 100).toFixed(1)}%)</span></span>
+                                    </div>
+                                    ` : ''}
                                     ${pos.liquidation_price > 0 ? `
                                     <div class="col-span-2">
                                         <span class="text-gray-600">Liquidation:</span>
@@ -820,16 +884,37 @@ async function loadOpenPositions() {
                     } else {
                         // Display database position
                         return `
-                            <div class="flex justify-between items-center p-3 bg-gray-50 rounded">
-                                <div>
-                                    <span class="font-semibold ${sideColor}">
-                                        ${pos.side}
-                                    </span>
-                                    <span class="text-gray-600 ml-2">${pos.size.toFixed(4)}</span>
+                            <div class="p-3 bg-gray-50 rounded border-l-4 border-gray-400">
+                                <div class="flex justify-between items-center mb-2">
+                                    <span class="font-semibold ${sideColor} text-lg">${pos.side}</span>
+                                    <span class="text-xs bg-gray-500 text-white px-2 py-1 rounded">DB</span>
                                 </div>
-                                <div class="text-right">
-                                    <div class="font-semibold">$${pos.entry_price.toFixed(4)}</div>
-                                    <div class="text-xs text-gray-500">${formatDateTime(pos.timestamp)}</div>
+                                <div class="grid grid-cols-2 gap-2 text-sm">
+                                    <div>
+                                        <span class="text-gray-600">Size:</span>
+                                        <span class="font-semibold ml-1">${pos.size.toFixed(4)}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-gray-600">Entry:</span>
+                                        <span class="font-semibold ml-1">$${pos.entry_price.toFixed(4)}</span>
+                                    </div>
+                                    ${pos.take_profit_price ? `
+                                    <div>
+                                        <span class="text-gray-600">TP:</span>
+                                        <span class="font-semibold ml-1 text-green-600">$${pos.take_profit_price.toFixed(4)}
+                                        <span class="text-xs">(${pos.side === 'LONG' ? '+' : '-'}${Math.abs(((pos.take_profit_price - pos.entry_price) / pos.entry_price) * 100).toFixed(1)}%)</span></span>
+                                    </div>
+                                    ` : ''}
+                                    ${pos.stop_loss_price ? `
+                                    <div>
+                                        <span class="text-gray-600">SL:</span>
+                                        <span class="font-semibold ml-1 text-red-600">$${pos.stop_loss_price.toFixed(4)}
+                                        <span class="text-xs">(-${Math.abs(((pos.entry_price - pos.stop_loss_price) / pos.entry_price) * 100).toFixed(1)}%)</span></span>
+                                    </div>
+                                    ` : ''}
+                                    <div class="col-span-2 text-xs text-gray-500">
+                                        ${formatDateTime(pos.timestamp)}
+                                    </div>
                                 </div>
                             </div>
                         `;
