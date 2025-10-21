@@ -57,9 +57,21 @@ async function loadBacktestData() {
 }
 
 /**
- * Run quick backtest with current weights
+ * Run quick backtest with current weights (PIN protected)
  */
 async function runQuickBacktest() {
+    // Prompt for PIN
+    const pin = prompt('Enter your 6-digit PIN to run quick backtest:');
+
+    if (!pin) {
+        return; // User cancelled
+    }
+
+    if (!/^\d{6}$/.test(pin)) {
+        alert('PIN must be exactly 6 digits');
+        return;
+    }
+
     const btn = document.getElementById('quickBacktestBtn');
     const loadingEl = document.getElementById('backtestLoading');
     const resultsEl = document.getElementById('backtestResults');
@@ -75,6 +87,7 @@ async function runQuickBacktest() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+                pin: pin,
                 symbol: 'SUIUSDC',
                 days_back: 30
             })
@@ -87,7 +100,12 @@ async function runQuickBacktest() {
             // Reload insights with new backtest data
             await loadBacktestInsights();
         } else {
-            alert('Backtest failed: ' + (result.error || 'Unknown error'));
+            // Check if it's a PIN error
+            if (response.status === 401 || response.status === 429) {
+                alert('PIN validation failed: ' + (result.message || 'Invalid PIN'));
+            } else {
+                alert('Backtest failed: ' + (result.error || 'Unknown error'));
+            }
         }
     } catch (error) {
         console.error('Error running backtest:', error);

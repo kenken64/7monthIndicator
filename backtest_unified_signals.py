@@ -35,9 +35,9 @@ class BacktestConfig:
     weights: Dict[str, float] = None
 
     # Thresholds
-    buy_threshold: float = 6.5  # Unified score >= 6.5 triggers BUY
-    sell_threshold: float = 3.5  # Unified score <= 3.5 triggers SELL
-    min_confidence: float = 55.0  # Minimum confidence for trade
+    buy_threshold: float = 5.5  # Unified score >= 5.5 triggers BUY (lowered from 6.5)
+    sell_threshold: float = 4.5  # Unified score <= 4.5 triggers SELL (raised from 3.5)
+    min_confidence: float = 0.0  # Minimum confidence for trade (0-11 scale)
 
 
 @dataclass
@@ -400,7 +400,8 @@ class UnifiedSignalBacktester:
     def _determine_action(self, unified_score: float, config: BacktestConfig, signal_data: Dict) -> str:
         """Determine trading action based on unified score"""
         # Require minimum confidence (use strength as proxy)
-        confidence = signal_data['strength'] * 10  # Convert 0-10 to 0-100
+        # Strength is on 0-11 scale in database, use it directly
+        confidence = signal_data['strength']
 
         if confidence < config.min_confidence:
             return 'HOLD'

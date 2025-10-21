@@ -777,15 +777,26 @@ async function loadRecentRLDecisions() {
 function formatTime(timeString) {
     try {
         if (!timeString) return 'N/A';
-        // Parse as UTC by properly formatting the timestamp
-        const date = new Date(timeString.replace(' ', 'T') + 'Z');
-        return date.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
+        // Parse timestamp and ensure it's treated as UTC
+        let date;
+        if (timeString.includes('T')) {
+            // ISO format: ensure it ends with Z for UTC
+            date = new Date(timeString.endsWith('Z') ? timeString : timeString + 'Z');
+        } else {
+            // Space-separated format: convert to ISO and mark as UTC
+            date = new Date(timeString.replace(' ', 'T') + 'Z');
+        }
+
+        // Format to Singapore timezone (UTC+8) with date and time
+        return date.toLocaleString('en-US', {
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
             minute: '2-digit',
-            second: '2-digit',
             timeZone: 'Asia/Singapore'
         });
     } catch (e) {
+        console.error('Error formatting time:', e, timeString);
         return timeString;
     }
 }

@@ -73,9 +73,9 @@ RISK_CONFIG = {
     
     # Stop Loss Settings (recommended for risk management)
     'use_stop_loss': True,         # Enable stop loss orders (RECOMMENDED)
-    'stop_loss_percentage': 10.0,  # Stop loss % from entry price (10% for balanced risk)
+    'stop_loss_percentage': 2.5,   # Stop loss % from entry price
     'use_take_profit': True,       # Enable take profit orders
-    'take_profit_percentage': 10.0, # Take profit % from entry price (1:1 risk/reward)
+    'take_profit_percentage': 6.0, # Take profit % from entry price
     
     # Advanced Stop Loss Settings
     'trailing_stop_loss': False,   # Enable trailing stop loss

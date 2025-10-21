@@ -398,24 +398,53 @@ def get_signals(symbol):
 @app.route('/api/trades/<symbol>')
 def get_trades(symbol):
     """API endpoint to get recent trades
-    
+
     Fetches recent trading activity including entry/exit prices,
-    quantities, PnL, and trade status.
-    
+    quantities, PnL, and trade status. For open trades, calculates
+    unrealized PnL based on current market price.
+
     Args:
         symbol: Trading pair symbol
-        
+
     Query Parameters:
         limit: Maximum number of trades to return (default: 20)
-        
+
     Returns:
         JSON response with trade history data
     """
     limit = request.args.get('limit', 20, type=int)
     db = get_database()
-    
+
     try:
         trades = db.get_recent_trades(symbol, limit)
+
+        # Get current price for calculating unrealized PnL on open trades
+        from binance.client import Client
+        import os
+
+        api_key = os.getenv('BINANCE_API_KEY')
+        secret_key = os.getenv('BINANCE_SECRET_KEY')
+        client = Client(api_key, secret_key, testnet=False)
+
+        try:
+            ticker = client.get_symbol_ticker(symbol=symbol)
+            current_price = float(ticker['price'])
+
+            # Calculate unrealized PnL for open trades
+            for trade in trades:
+                if trade['status'] == 'OPEN':
+                    # Calculate unrealized PnL based on current price
+                    if trade['side'] == 'BUY':
+                        unrealized_pnl = (current_price - trade['entry_price']) * trade['quantity']
+                    else:  # SELL
+                        unrealized_pnl = (trade['entry_price'] - current_price) * trade['quantity']
+
+                    # Update the trade's PnL with unrealized PnL
+                    trade['pnl'] = unrealized_pnl
+                    trade['pnl_percentage'] = (unrealized_pnl / (trade['entry_price'] * trade['quantity'])) * 100
+        except Exception as price_error:
+            logger.warning(f"Could not fetch current price for unrealized PnL: {price_error}")
+
         return jsonify({
             'success': True,
             'data': trades
@@ -452,8 +481,45 @@ def get_open_positions(symbol):
     
     try:
         # Get positions from database - Local trade records
-        db_positions = db.get_open_trades(symbol)
-        
+        raw_db_positions = db.get_open_trades(symbol)
+
+        # Aggregate fills with the same order_id into single positions
+        aggregated_positions = {}
+        for trade in raw_db_positions:
+            order_id = trade.get('order_id')
+            if not order_id:
+                # If no order_id, treat as individual position
+                key = trade['id']
+                aggregated_positions[key] = trade
+            else:
+                # Aggregate by order_id
+                if order_id not in aggregated_positions:
+                    aggregated_positions[order_id] = {
+                        'id': trade['id'],
+                        'symbol': trade['symbol'],
+                        'side': trade['side'],
+                        'quantity': 0,
+                        'entry_price': 0,
+                        'total_cost': 0,
+                        'timestamp': trade['timestamp'],
+                        'status': trade['status'],
+                        'order_id': order_id,
+                        'liquidation_price': trade.get('liquidation_price'),
+                        'stop_loss_price': trade.get('stop_loss_price'),
+                        'take_profit_price': trade.get('take_profit_price'),
+                        'created_at': trade.get('created_at'),
+                        'updated_at': trade.get('updated_at')
+                    }
+
+                # Aggregate quantity and calculate weighted average entry price
+                pos = aggregated_positions[order_id]
+                pos['total_cost'] += trade['quantity'] * trade['entry_price']
+                pos['quantity'] += trade['quantity']
+                pos['entry_price'] = pos['total_cost'] / pos['quantity']
+
+        # Convert back to list
+        db_positions = list(aggregated_positions.values())
+
         # Also get live positions from Binance API - Real-time exchange data
         try:
             api_key = os.getenv('BINANCE_API_KEY')
@@ -2651,12 +2717,14 @@ def get_hyperdash_trader(trader_address):
 
 @app.route('/api/backtest/run', methods=['POST'])
 def run_backtest():
-    """API endpoint to run a backtest with custom configuration
+    """API endpoint to run a backtest with custom configuration (PIN protected)
 
     Executes a backtest using the unified signal aggregator historical data.
     Tests different weight combinations and trading parameters.
+    Requires 6-digit PIN authentication.
 
     Request Body:
+        pin: 6-digit PIN for authentication (required)
         symbol: Trading pair symbol (default: 'SUIUSDC')
         start_date: Start date YYYY-MM-DD (optional, defaults to available data)
         end_date: End date YYYY-MM-DD (optional, defaults to available data)
@@ -2677,15 +2745,33 @@ def run_backtest():
 
         data = request.get_json() or {}
 
+        # Get request data and PIN
+        provided_pin = data.get('pin', '').strip()
+
+        # Get client IP for rate limiting
+        client_ip = request.remote_addr or request.headers.get('X-Forwarded-For', 'unknown')
+
+        # Validate 6-digit PIN
+        pin_validation = validate_6_digit_pin(provided_pin, client_ip)
+        if not pin_validation['success']:
+            status_code = 429 if pin_validation['blocked'] else 401
+            return jsonify({
+                'success': False,
+                'message': pin_validation['message'],
+                'blocked': pin_validation['blocked']
+            }), status_code
+
+        logger.info(f"🔒 Quick backtest authorized from IP: {client_ip}")
+
         # Extract parameters
         symbol = data.get('symbol', 'SUIUSDC')
         days_back = data.get('days_back', 30)
         initial_balance = data.get('initial_balance', 10000.0)
 
-        # Use shared database with more historical data
-        db_path = 'shared/databases/trading_bot.db'
+        # Use current database with live data
+        db_path = 'data/trading_bot.db'
 
-        # Calculate date range from shared database
+        # Calculate date range from database
         conn = sqlite3.connect(db_path)
         cursor = conn.execute("SELECT MIN(timestamp) as start, MAX(timestamp) as end FROM signals WHERE symbol = ?", (symbol,))
         result = cursor.fetchone()
@@ -2709,9 +2795,9 @@ def run_backtest():
             stop_loss_pct=data.get('stop_loss_pct', 0.03),
             take_profit_pct=data.get('take_profit_pct', 0.06),
             weights=data.get('weights'),  # None will use defaults
-            buy_threshold=data.get('buy_threshold', 6.5),
-            sell_threshold=data.get('sell_threshold', 3.5),
-            min_confidence=data.get('min_confidence', 55.0)
+            buy_threshold=data.get('buy_threshold', 5.5),
+            sell_threshold=data.get('sell_threshold', 4.5),
+            min_confidence=data.get('min_confidence', 0.0)
         )
 
         # Run backtest with shared database
@@ -2803,7 +2889,7 @@ def run_backtest_optimization():
         initial_balance = data.get('initial_balance', 10000.0)
 
         # Use shared database
-        db_path = 'shared/databases/trading_bot.db'
+        db_path = 'data/trading_bot.db'
 
         # Calculate date range from shared database
         import sqlite3
@@ -2866,7 +2952,7 @@ def check_backtest_data():
         import sqlite3
 
         # Use shared database with historical data
-        db_path = 'shared/databases/trading_bot.db'
+        db_path = 'data/trading_bot.db'
         conn = sqlite3.connect(db_path)
 
         # Get signal statistics
@@ -2961,7 +3047,7 @@ def get_backtest_insights():
 
         # Run a quick backtest with current weights on shared database
         symbol = 'SUIUSDC'
-        db_path = 'shared/databases/trading_bot.db'
+        db_path = 'data/trading_bot.db'
 
         # Get actual date range from database
         import sqlite3

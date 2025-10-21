@@ -449,26 +449,56 @@ class TradingDatabase:
             return []
 
     def get_recent_trades(self, symbol: str = None, limit: int = 10) -> List[Dict]:
-        """Get recent trades from database
-        
-        Retrieves recent trade executions with linked signal information
-        for performance analysis and dashboard display.
-        
+        """Get recent trades from database with aggregated fills
+
+        Retrieves recent trade executions with individual fills aggregated by order_id.
+        When a market order is filled in multiple parts, all fills are grouped together
+        and shown as a single trade with total quantity and weighted average price.
+
         Args:
             symbol: Filter by trading pair (None for all symbols)
-            limit: Maximum number of trades to return
-            
+            limit: Maximum number of trades (orders) to return
+
         Returns:
-            List[Dict]: Recent trades with signal details
+            List[Dict]: Recent trades with aggregated fills and signal details
         """
         try:
             with self.get_connection() as conn:
+                # Aggregate fills by order_id, showing one row per order
                 query = '''
-                    SELECT t.*, s.signal, s.strength 
+                    SELECT
+                        MIN(t.id) as id,
+                        MIN(t.timestamp) as timestamp,
+                        t.order_id,
+                        t.symbol,
+                        t.side,
+                        SUM(t.quantity) as quantity,
+                        SUM(t.quantity * t.entry_price) / SUM(t.quantity) as entry_price,
+                        CASE
+                            WHEN MAX(t.exit_price) IS NOT NULL
+                            THEN SUM(t.quantity * COALESCE(t.exit_price, t.entry_price)) / SUM(t.quantity)
+                            ELSE NULL
+                        END as exit_price,
+                        SUM(COALESCE(t.pnl, 0)) as pnl,
+                        AVG(t.pnl_percentage) as pnl_percentage,
+                        MAX(t.status) as status,
+                        MIN(t.signal_id) as signal_id,
+                        MIN(s.signal) as signal,
+                        MIN(s.strength) as strength,
+                        MIN(t.leverage) as leverage,
+                        MIN(t.liquidation_price) as liquidation_price,
+                        MIN(t.stop_loss_price) as stop_loss_price,
+                        MIN(t.take_profit_price) as take_profit_price,
+                        MIN(t.position_size_percentage) as position_size_percentage,
+                        MIN(t.created_at) as created_at,
+                        MAX(t.updated_at) as updated_at
                     FROM trades t
                     LEFT JOIN signals s ON t.signal_id = s.id
                     WHERE t.symbol = ? OR ? IS NULL
-                    ORDER BY t.timestamp DESC 
+                    GROUP BY t.order_id, t.symbol, t.side
+                    ORDER BY
+                        CASE WHEN MAX(t.status) = 'OPEN' THEN 0 ELSE 1 END,
+                        MIN(t.timestamp) DESC
                     LIMIT ?
                 '''
                 cursor = conn.execute(query, (symbol, symbol, limit))
@@ -692,20 +722,20 @@ class TradingDatabase:
             logger.error(f"Error getting all trades: {e}")
             return []
 
-    def get_recent_trades(self, symbol: str, limit: int = 10) -> List[Dict]:
-        """Get recent trades with proper formatting"""
+    def get_recent_trades_formatted(self, symbol: str, limit: int = 10) -> List[Dict]:
+        """Get recent trades with proper formatting (no time restriction)"""
         try:
             with self.get_connection() as conn:
                 cursor = conn.execute('''
                     SELECT timestamp, side, quantity, entry_price, exit_price, pnl, status
-                    FROM trades 
-                    WHERE symbol = ? AND timestamp >= datetime('now', '-7 days')
-                    ORDER BY timestamp DESC 
+                    FROM trades
+                    WHERE symbol = ?
+                    ORDER BY timestamp DESC
                     LIMIT ?
                 ''', (symbol, limit))
-                
+
                 return [dict(row) for row in cursor.fetchall()]
-                
+
         except Exception as e:
             logger.error(f"Error getting recent trades: {e}")
             return []
