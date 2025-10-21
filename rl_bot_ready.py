@@ -4,6 +4,12 @@ RL-Enhanced Trading Bot - Ready to Run
 Direct copy of original bot with RL integration
 """
 
+# Initialize Docker secrets before any other imports
+try:
+    import init_secrets  # This loads Docker secrets into environment variables
+except ImportError:
+    pass  # Running in development mode without Docker secrets
+
 import os
 import time
 import pandas as pd

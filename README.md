@@ -218,6 +218,120 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
    pip install ta-lib
    ```
 
+## Docker Installation (Recommended)
+
+For easier deployment and management, you can use Docker to run the entire trading system in containers.
+
+### Prerequisites
+- Docker (version 20.10+)
+- Docker Compose (version 2.0+)
+
+### Quick Start with Docker
+
+1. **Clone the repository:**
+   ```bash
+   git clone <your-repo-url>
+   cd 7monthIndicator
+   ```
+
+2. **Create your .env file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Configure your API credentials in .env:**
+   Edit the `.env` file and add your:
+   - Binance API keys
+   - OpenAI API key
+   - NewsAPI key
+   - Bot control PIN
+
+4. **Start all services with Docker:**
+   ```bash
+   ./docker-restart.sh
+   ```
+
+   Or manually:
+   ```bash
+   docker-compose up -d --build
+   ```
+
+### Docker Services
+
+The docker-compose setup creates three containerized services mirroring the `scripts/restart_both.sh` script:
+
+1. **rl-bot**: RL Trading Bot (rl_bot_ready.py)
+2. **chart-bot**: Chart Analysis Bot (chart_analysis_bot.py)
+3. **web-dashboard**: Web Dashboard (web_dashboard.py)
+
+### Docker Management Commands
+
+```bash
+# Start all services
+./docker-restart.sh
+# or
+docker-compose up -d
+
+# Stop all services
+docker-compose down
+
+# View logs (all services)
+docker-compose logs -f
+
+# View logs (specific service)
+docker-compose logs -f rl-bot
+docker-compose logs -f chart-bot
+docker-compose logs -f web-dashboard
+
+# Check service status
+docker-compose ps
+
+# Restart a specific service
+docker-compose restart rl-bot
+
+# View resource usage
+docker stats
+```
+
+### Data Persistence
+
+The following directories and files are mounted as volumes for data persistence:
+- `./logs` - Application logs
+- `./data` - Trading data
+- `./shared` - Shared resources between services
+- `*.db` - SQLite database files
+- `*.pkl` - ML model files
+
+### Health Checks
+
+Each service includes health checks to ensure they're running properly:
+- **RL Bot**: Checks if process is running every 30s
+- **Chart Bot**: Checks if process is running every 30s
+- **Web Dashboard**: HTTP health check on port 5000 every 30s
+
+### Troubleshooting Docker
+
+**Service won't start:**
+```bash
+# Check logs for errors
+docker-compose logs <service-name>
+
+# Rebuild containers
+docker-compose up -d --build --force-recreate
+```
+
+**Permission issues:**
+```bash
+# Fix ownership of mounted volumes
+sudo chown -R $USER:$USER logs/ data/ shared/
+```
+
+**Out of disk space:**
+```bash
+# Clean up unused Docker resources
+docker system prune -a
+```
+
 ## Configuration
 
 1. **Create your .env file:**

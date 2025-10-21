@@ -194,7 +194,7 @@ agents:
     enabled: true
     priority: "highest"  # Pre-empts all other agents
     monitoring_interval_ms: 1000  # Check every 1 second
-    llm_model: "gpt-4o-mini"  # Fast, cost-effective model
+    llm_model: "gpt-5-nano"  # Fast, cost-effective model (67% cheaper)
     temperature: 0.1  # Low temperature for consistent decisions
     role: "Market Crash Protection Specialist"
     goal: "Monitor market-wide conditions and immediately halt all bot trading when systemic crashes are detected"
@@ -212,7 +212,7 @@ agents:
     enabled: true
     priority: "high"
     check_circuit_breaker: true  # Check CB before processing spikes
-    llm_model: "gpt-4o-mini"
+    llm_model: "gpt-5-nano"
     temperature: 0.2
     role: "Binance Market Surveillance Specialist"
     goal: "Detect anomalous price movements across all monitored Binance trading pairs in real-time"
@@ -228,7 +228,7 @@ agents:
   context_analyzer:
     enabled: true
     priority: "medium"
-    llm_model: "gpt-4o-mini"
+    llm_model: "gpt-5-nano"
     temperature: 0.3
     role: "Crypto Intelligence Analyst"
     goal: "Provide comprehensive context for market spikes on Binance to distinguish legitimate opportunities from manipulation"
@@ -245,7 +245,7 @@ agents:
     enabled: true
     priority: "high"
     check_circuit_breaker: true  # Verify CB status before approving trades
-    llm_model: "gpt-4o-mini"
+    llm_model: "gpt-5-nano"
     temperature: 0.1  # Very conservative
     role: "Crypto Risk Manager"
     goal: "Evaluate risk-reward profile and determine position sizing for spike opportunities while ensuring circuit breaker isn't triggered"
@@ -263,7 +263,7 @@ agents:
     enabled: true
     priority: "medium"
     check_circuit_breaker: true  # CRITICAL: Don't execute if CB active
-    llm_model: "gpt-4o-mini"
+    llm_model: "gpt-5-nano"
     temperature: 0.1
     role: "Binance Trade Execution Specialist"
     goal: "Execute optimal entry/exit strategies for approved spike opportunities on Binance"
@@ -318,7 +318,7 @@ crews:
 # ========================================
 llm:
   provider: "openai"  # openai, anthropic, local
-  model: "gpt-4o-mini"  # Cost-effective model
+  model: "gpt-5-nano"  # Cost-effective model (67% cheaper than gpt-4o-mini)
   api_key_env: "OPENAI_API_KEY"
   temperature: 0.2
   max_tokens: 1000

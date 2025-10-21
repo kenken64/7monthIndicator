@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+analyze_venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+logs/*.log
+
+# Database files (will be mounted as volumes)
+*.db
+*.sqlite
+*.sqlite3
+
+# Model files (will be mounted as volumes)
+*.pkl
+
+# Analysis results
+analysis_results_*.json
+chart_analysis_*.png
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Documentation
+*.md
+!README.md
+
+# Charts and generated files
+*.png
+shared/charts/
+
+# Process IDs
+*.pid
+
+# Test files
+test_*.py
+tests/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore

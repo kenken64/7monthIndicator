@@ -163,7 +163,9 @@ class SignalDataCollector:
             }
 
             # Save to file
-            with open('/root/7monthIndicator/market_context.json', 'w') as f:
+            # Detect environment (Docker uses /app, native uses project root)
+            base_path = '/app' if os.path.exists('/app') else '/root/7monthIndicator'
+            with open(f'{base_path}/market_context.json', 'w') as f:
                 json.dump(market_data, f, indent=2)
 
             logger.info(f"✅ Market context saved: BTC ${context.btc_price:.0f} ({context.btc_change_24h:+.1f}%), Trend: {context.market_trend}")
@@ -207,7 +209,9 @@ class SignalDataCollector:
             }
 
             # Save to file
-            with open('/root/7monthIndicator/crewai_analysis.json', 'w') as f:
+            # Detect environment (Docker uses /app, native uses project root)
+            base_path = '/app' if os.path.exists('/app') else '/root/7monthIndicator'
+            with open(f'{base_path}/crewai_analysis.json', 'w') as f:
                 json.dump(crewai_data, f, indent=2)
 
             logger.info(f"✅ CrewAI signals saved: State={crewai_data['circuit_breaker']['state']}, Action={crewai_data['consensus']['action']}")
@@ -241,7 +245,9 @@ class SignalDataCollector:
             sentiment_result = self.sentiment_analyzer.get_news_and_sentiment(count=20)
 
             # Save to file (sentiment_result already has all the necessary fields)
-            with open('/root/7monthIndicator/news_sentiment.json', 'w') as f:
+            # Detect environment (Docker uses /app, native uses project root)
+            base_path = '/app' if os.path.exists('/app') else '/root/7monthIndicator'
+            with open(f'{base_path}/news_sentiment.json', 'w') as f:
                 json.dump(sentiment_result, f, indent=2)
 
             logger.info(f"✅ News sentiment saved: {sentiment_result['sentiment']} (score: {sentiment_result['sentiment_score']:.2f}, articles: {sentiment_result['article_count']})")

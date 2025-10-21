@@ -81,7 +81,7 @@ Generate realistic market scenarios that could be happening today. Make them var
 
             # Call OpenAI API
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",  # Using cost-effective model
+                model="gpt-5-nano",  # Using cost-effective model (67% cheaper)
                 messages=[
                     {"role": "system", "content": "You are a cryptocurrency news expert specializing in providing accurate, up-to-date information about crypto markets."},
                     {"role": "user", "content": prompt}
@@ -225,7 +225,7 @@ Format your response as JSON:
 
             # Call OpenAI API
             response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-nano",
                 messages=[
                     {"role": "system", "content": "You are a cryptocurrency market sentiment analyst. Provide accurate, unbiased sentiment analysis based on news data."},
                     {"role": "user", "content": prompt}
@@ -327,7 +327,10 @@ def test_openai_news_sentiment():
         print("=" * 60)
 
         # Save to file
-        output_file = '/root/7monthIndicator/news_sentiment.json'
+        # Detect environment (Docker uses /app, native uses project root)
+        import os
+        base_path = '/app' if os.path.exists('/app') else '/root/7monthIndicator'
+        output_file = f'{base_path}/news_sentiment.json'
         with open(output_file, 'w') as f:
             json.dump(result, f, indent=2)
         print(f"\n✅ Results saved to: {output_file}")

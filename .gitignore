@@ -94,3 +94,6 @@ temp/
 
 # Analysis virtual environment
 analyze_venv/
+# Docker Secrets (sensitive data)
+secrets/
+.env.backup

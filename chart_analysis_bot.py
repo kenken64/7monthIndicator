@@ -15,6 +15,12 @@ Features:
 - Automated trading recommendations
 """
 
+# Initialize Docker secrets before any other imports
+try:
+    import init_secrets  # This loads Docker secrets into environment variables
+except ImportError:
+    pass  # Running in development mode without Docker secrets
+
 import os
 import sys
 import json
@@ -89,7 +95,9 @@ class ChartAnalysisBot:
         # Chart configuration
         self.interval = '15m'  # 15-minute intervals
         self.hours_back = 24   # 24 hours of data
-        self.chart_filename = f'chart_analysis_{self.symbol}.png'
+        # Save chart to shared directory for web dashboard access
+        os.makedirs('shared', exist_ok=True)
+        self.chart_filename = f'shared/chart_analysis_{self.symbol}.png'
         
         logger.info(f"🤖 Chart Analysis Bot initialized for {self.symbol}")
         logger.info(f"📊 Configuration: {self.interval} intervals, {self.hours_back}h history")
@@ -361,7 +369,7 @@ Focus on SHORT-TERM trading opportunities (1-4 hour timeframe) and be specific w
             }
             
             payload = {
-                "model": "gpt-4o",
+                "model": "gpt-4o",  # GPT-5 vision returns empty responses, using GPT-4o for reliability
                 "messages": [
                     {
                         "role": "user",
@@ -396,8 +404,27 @@ Focus on SHORT-TERM trading opportunities (1-4 hour timeframe) and be specific w
                 raise Exception(f"OpenAI API error: {response.status_code} - {response.text}")
             
             result = response.json()
-            ai_response = result['choices'][0]['message']['content']
-            
+
+            # Log full response structure for debugging
+            logger.info(f"📊 Full API Response structure: {list(result.keys())}")
+            logger.info(f"📊 Choices: {len(result.get('choices', []))}")
+
+            if result.get('choices') and len(result['choices']) > 0:
+                message = result['choices'][0].get('message', {})
+                ai_response = message.get('content', '')
+                refusal = message.get('refusal', None)
+
+                logger.info(f"📊 Message keys: {list(message.keys())}")
+                logger.info(f"📊 Content length: {len(ai_response)} characters")
+
+                if refusal:
+                    logger.warning(f"⚠️ GPT-5 REFUSED to respond: {refusal}")
+
+                logger.info(f"📝 GPT-5 Raw Response (first 1000 chars): {ai_response[:1000]}")
+            else:
+                ai_response = ''
+                logger.error("❌ No choices in API response!")
+
             # Try to extract JSON from response
             try:
                 # Look for JSON in the response
@@ -515,12 +542,13 @@ def run_single_analysis(bot):
     try:
         # Run analysis
         results = bot.run_analysis()
-        
-        # Save results to file
-        results_file = f"analysis_results_{bot.symbol}.json"
+
+        # Save results to shared directory for web dashboard access
+        os.makedirs('shared', exist_ok=True)
+        results_file = f"shared/analysis_results_{bot.symbol}.json"
         with open(results_file, 'w') as f:
             json.dump(results, f, indent=2, default=str)
-        
+
         logger.info(f"📁 Results saved to: {results_file}")
         logger.info("🎉 Chart analysis completed successfully!")
         

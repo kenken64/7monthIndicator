@@ -105,9 +105,17 @@ NOTIFICATION_CONFIG = {
 from dotenv import load_dotenv
 load_dotenv('.env')
 
-NEWS_CONFIG = {
-    'api_key': os.getenv('NEWS_API_KEY') or 'ecc8081a11e24c1490722c9da1564fe5',
-}
+# Import secrets helper for secure credential management
+try:
+    from secrets_helper import get_news_api_key
+    NEWS_CONFIG = {
+        'api_key': get_news_api_key(),
+    }
+except (ImportError, ValueError):
+    # Fallback to environment variable for development
+    NEWS_CONFIG = {
+        'api_key': os.getenv('NEWS_API_KEY') or 'ecc8081a11e24c1490722c9da1564fe5',
+    }
 
 
 # Advanced Settings

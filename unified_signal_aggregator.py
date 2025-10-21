@@ -235,7 +235,9 @@ class UnifiedSignalAggregator:
         """
         try:
             # Load latest chart analysis
-            analysis_file = f'/root/7monthIndicator/analysis_results_{symbol}.json'
+            # Detect environment (Docker uses /app/shared, native uses project root)
+            base_path = '/app/shared' if os.path.exists('/app') else '/root/7monthIndicator'
+            analysis_file = f'{base_path}/analysis_results_{symbol}.json'
             if not os.path.exists(analysis_file):
                 logger.warning(f"Chart analysis file not found: {analysis_file}")
                 return 5.0, 0.0
@@ -291,7 +293,9 @@ class UnifiedSignalAggregator:
         """
         try:
             # Load latest CrewAI analysis
-            crewai_file = '/root/7monthIndicator/crewai_analysis.json'
+            # Detect environment (Docker uses /app, native uses project root)
+            base_path = '/app' if os.path.exists('/app') else '/root/7monthIndicator'
+            crewai_file = f'{base_path}/crewai_analysis.json'
             if not os.path.exists(crewai_file):
                 logger.warning("CrewAI analysis file not found")
                 return 5.0, 0.0
@@ -346,7 +350,9 @@ class UnifiedSignalAggregator:
         """
         try:
             # Load market context
-            context_file = '/root/7monthIndicator/market_context.json'
+            # Detect environment (Docker uses /app, native uses project root)
+            base_path = '/app' if os.path.exists('/app') else '/root/7monthIndicator'
+            context_file = f'{base_path}/market_context.json'
             if not os.path.exists(context_file):
                 logger.warning("Market context file not found")
                 return 5.0, 0.0
@@ -401,7 +407,9 @@ class UnifiedSignalAggregator:
         """
         try:
             # Load news sentiment
-            news_file = '/root/7monthIndicator/news_sentiment.json'
+            # Detect environment (Docker uses /app, native uses project root)
+            base_path = '/app' if os.path.exists('/app') else '/root/7monthIndicator'
+            news_file = f'{base_path}/news_sentiment.json'
             if not os.path.exists(news_file):
                 logger.warning("News sentiment file not found")
                 return 5.0, 0.0

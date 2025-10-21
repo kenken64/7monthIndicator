@@ -15,6 +15,12 @@ and analysis for the RL-enhanced trading bot. Features include:
 - RL decision analysis and insights
 """
 
+# Initialize Docker secrets before any other imports
+try:
+    import init_secrets  # This loads Docker secrets into environment variables
+except ImportError:
+    pass  # Running in development mode without Docker secrets
+
 import json
 import os
 import time
@@ -82,7 +88,7 @@ Respond only with valid JSON."""
         }
         
         payload = {
-            "model": "gpt-4o-mini",  # 60x cheaper than GPT-4
+            "model": "gpt-5-nano",  # 67% cheaper than gpt-4o-mini
             "messages": [
                 {
                     "role": "user", 
@@ -240,11 +246,16 @@ def validate_6_digit_pin(provided_pin: str, client_ip: str) -> dict:
 @app.route('/')
 def dashboard():
     """Main dashboard page
-    
+
     Serves the primary dashboard interface with real-time trading
     data, performance metrics, and system status.
     """
     return render_template('dashboard.html')
+
+@app.route('/health')
+def health():
+    """Health check endpoint for Docker health checks"""
+    return {'status': 'healthy'}, 200
 
 @app.route('/test')
 def test_projections():
@@ -1068,7 +1079,7 @@ def get_unified_signals(symbol):
             }
 
         # Load chart analysis
-        chart_file = 'analysis_results_SUIUSDC.json'
+        chart_file = 'shared/analysis_results_SUIUSDC.json'
         if os.path.exists(chart_file):
             with open(chart_file, 'r') as f:
                 chart_data = json.load(f)
@@ -1228,25 +1239,39 @@ def get_unified_signals(symbol):
                 news_data = json.load(f)
 
                 # Map sentiment to action
-                sentiment = news_data.get('sentiment', 'Neutral')
-                if sentiment.lower() in ['bullish', 'positive']:
-                    action = 'BUY'
-                elif sentiment.lower() in ['bearish', 'negative']:
-                    action = 'SELL'
+                # Handle both old format (string) and new format (dict)
+                sentiment_data = news_data.get('sentiment', 'Neutral')
+                if isinstance(sentiment_data, dict):
+                    # New format: sentiment is a dict with label, score, confidence
+                    sentiment_label = sentiment_data.get('label', 'neutral')
+                    raw_score = sentiment_data.get('score', 0.5)
+                    confidence = sentiment_data.get('confidence', 50.0)
+                else:
+                    # Old format: sentiment is a string
+                    sentiment_label = sentiment_data
+                    raw_score = news_data.get('sentiment_score', 0)
+                    confidence = news_data.get('confidence', 0) * 10 if news_data.get('confidence', 0) <= 1 else news_data.get('confidence', 0)
+
+                # Map sentiment label to action
+                if isinstance(sentiment_label, str):
+                    if sentiment_label.lower() in ['bullish', 'positive']:
+                        action = 'BUY'
+                    elif sentiment_label.lower() in ['bearish', 'negative']:
+                        action = 'SELL'
+                    else:
+                        action = 'HOLD'
                 else:
                     action = 'HOLD'
 
                 # Convert sentiment_score to 0-10 scale for consistency
-                # sentiment_score is typically -1 to 1, convert to 0-10 scale
-                raw_score = news_data.get('sentiment_score', 0)
-                # Map: -1 (bearish) -> 0, 0 (neutral) -> 5, 1 (bullish) -> 10
-                score = (raw_score + 1) * 5
-
-                # Get confidence (1-10 scale)
-                confidence = news_data.get('confidence', 0) * 10 if news_data.get('confidence', 0) <= 1 else news_data.get('confidence', 0)
+                # sentiment_score is typically 0-1, convert to 0-10 scale
+                if raw_score <= 1:
+                    score = raw_score * 10
+                else:
+                    score = raw_score
 
                 unified_data['signal_sources']['news_sentiment'] = {
-                    'sentiment': sentiment,
+                    'sentiment': sentiment_label,
                     'action': action,  # Add action field for frontend
                     'score': score,
                     'confidence': confidence,
@@ -1505,12 +1530,12 @@ def get_ai_agent_logs():
     try:
         agent_logs = []
 
-        # Read from trading_bot.log which contains CrewAI integration logs
-        log_file = 'logs/trading_bot.log'
+        # Read from CrewAI bot log file (shared volume)
+        crewai_log_file = 'logs/crewai_bot.log'
 
-        if os.path.exists(log_file):
+        if os.path.exists(crewai_log_file):
             try:
-                with open(log_file, 'r') as f:
+                with open(crewai_log_file, 'r') as f:
                     file_lines = f.readlines()
                     # Get more lines than requested to filter
                     recent_lines = file_lines[-lines*3:] if len(file_lines) > lines*3 else file_lines
@@ -1848,42 +1873,80 @@ def get_rl_bot_status():
         import os
         from datetime import datetime, timedelta
         
-        # Check if RL bot is running - use PID file for reliability
+        # Check if RL bot is running
         is_running = False
         bot_pid = None
 
         try:
-            # Method 1: Check PID file
-            pid_file = 'rl_bot.pid'
-            if os.path.exists(pid_file):
-                try:
-                    with open(pid_file, 'r') as f:
-                        pid_content = f.read().strip()
-                        if pid_content:
-                            # Verify the process is actually running
-                            result = subprocess.run(['ps', '-p', pid_content], capture_output=True, text=True, timeout=5)
-                            if result.returncode == 0 and 'python' in result.stdout:
-                                bot_pid = pid_content
-                                is_running = True
-                                logger.info(f"Found RL bot running with PID: {bot_pid} (from PID file)")
-                except Exception as e:
-                    logger.warning(f"Error reading PID file: {e}")
+            # Check if running in Docker by looking for /.dockerenv
+            in_docker = os.path.exists('/.dockerenv')
 
-            # Method 2: Fallback to ps aux if PID file method failed
-            if not is_running:
-                result = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=5)
-                if 'rl_bot_ready.py' in result.stdout:
-                    is_running = True
-                    # Get PID if running
-                    for line in result.stdout.split('\n'):
-                        if 'rl_bot_ready.py' in line and 'grep' not in line:
-                            parts = line.split()
-                            if len(parts) >= 2:
-                                bot_pid = parts[1]
-                                logger.info(f"Found RL bot running with PID: {bot_pid} (from ps aux)")
-                            break
+            if in_docker:
+                # Method 1: Docker environment - check database activity
+                # If bot is running, it should be writing signals regularly
+                db_temp = get_database()
+                recent_signals = db_temp.get_recent_signals(symbol='SUIUSDC', limit=1)
+                if recent_signals:
+                    latest_signal = recent_signals[0]
+                    if 'timestamp' in latest_signal:
+                        try:
+                            # Parse timestamp and check age
+                            signal_time_str = latest_signal['timestamp']
+                            # Handle different timestamp formats
+                            if 'T' in signal_time_str:
+                                signal_time = datetime.fromisoformat(signal_time_str.replace('Z', '+00:00'))
+                            else:
+                                signal_time = datetime.strptime(signal_time_str, '%Y-%m-%d %H:%M:%S')
+
+                            # Get current time (make timezone aware if needed)
+                            current_time = datetime.now()
+                            if signal_time.tzinfo is not None:
+                                from datetime import timezone
+                                current_time = current_time.replace(tzinfo=timezone.utc)
+
+                            time_diff = (current_time - signal_time).total_seconds()
+                            if time_diff < 300:  # 5 minutes
+                                is_running = True
+                                bot_pid = "docker"
+                                logger.info(f"RL bot detected as running in Docker (latest signal {int(time_diff)}s ago)")
+                            else:
+                                logger.warning(f"Latest signal is {int(time_diff)}s old - bot may be stopped")
+                        except Exception as e:
+                            logger.warning(f"Error parsing signal timestamp: {e}")
                 else:
-                    logger.warning("RL bot process not found in ps output")
+                    logger.warning("No recent signals found - bot may not have started yet")
+            else:
+                # Method 2: Native deployment - check PID file
+                pid_file = 'rl_bot.pid'
+                if os.path.exists(pid_file):
+                    try:
+                        with open(pid_file, 'r') as f:
+                            pid_content = f.read().strip()
+                            if pid_content:
+                                # Verify the process is actually running
+                                result = subprocess.run(['ps', '-p', pid_content], capture_output=True, text=True, timeout=5)
+                                if result.returncode == 0 and 'python' in result.stdout:
+                                    bot_pid = pid_content
+                                    is_running = True
+                                    logger.info(f"Found RL bot running with PID: {bot_pid} (from PID file)")
+                    except Exception as e:
+                        logger.warning(f"Error reading PID file: {e}")
+
+                # Method 3: Fallback to ps aux if PID file method failed
+                if not is_running:
+                    result = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=5)
+                    if 'rl_bot_ready.py' in result.stdout:
+                        is_running = True
+                        # Get PID if running
+                        for line in result.stdout.split('\n'):
+                            if 'rl_bot_ready.py' in line and 'grep' not in line:
+                                parts = line.split()
+                                if len(parts) >= 2:
+                                    bot_pid = parts[1]
+                                    logger.info(f"Found RL bot running with PID: {bot_pid} (from ps aux)")
+                                break
+                    else:
+                        logger.warning("RL bot process not found in ps output")
         except Exception as e:
             logger.error(f"Error checking RL bot status: {e}")
             is_running = False
@@ -1892,16 +1955,85 @@ def get_rl_bot_status():
         # Get latest RL decision from the database
         db = get_database()
         latest_rl_decision = db.get_recent_rl_signals(limit=1)
-        
+
+        # Extract market data from latest signal indicators
+        market_data = None
+        current_signal = None
+        if latest_rl_decision:
+            decision = latest_rl_decision[0]
+            indicators = decision.get('indicators', {})
+            if indicators:
+                market_data = {
+                    'symbol': decision.get('symbol', 'SUIUSDC'),
+                    'price': decision.get('price', 0),
+                    'rsi': indicators.get('rsi', 0),
+                    'vwap': indicators.get('vwap', 0),
+                    'timestamp': decision.get('timestamp', '')
+                }
+
+            # Extract current signal
+            signal_value = decision.get('signal', 0)
+            strength = decision.get('strength', 0)
+            action = 'BUY' if signal_value > 0 else 'SELL' if signal_value < 0 else 'HOLD'
+            current_signal = {
+                'action': action,
+                'strength': strength,
+                'timestamp': decision.get('timestamp', '')
+            }
+
+        # Get position info from database
+        position_info = None
+        try:
+            with db.get_connection() as conn:
+                cursor = conn.execute('''
+                    SELECT * FROM trades
+                    WHERE symbol = ? AND status = 'OPEN'
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                ''', ('SUIUSDC',))
+                position = cursor.fetchone()
+
+                if position:
+                    position_dict = dict(position)
+                    # Calculate current PnL if we have market data
+                    if market_data:
+                        current_price = market_data['price']
+                        entry_price = position_dict['entry_price']
+                        quantity = position_dict['quantity']
+                        side = position_dict['side']
+
+                        # Calculate PnL
+                        if side == 'BUY':
+                            pnl = (current_price - entry_price) * quantity
+                        else:  # SELL
+                            pnl = (entry_price - current_price) * quantity
+
+                        pnl_percentage = (pnl / (entry_price * quantity)) * 100
+
+                        position_info = {
+                            'side': 'LONG' if side == 'BUY' else 'SHORT',
+                            'size': quantity,
+                            'entry_price': entry_price,
+                            'current_price': current_price,
+                            'pnl': f"{pnl:+.2f}",
+                            'pnl_percentage': f"{pnl_percentage:+.2f}%",
+                            'timestamp': position_dict['timestamp']
+                        }
+                else:
+                    position_info = {'status': 'No position'}
+        except Exception as e:
+            logger.error(f"Error getting position info: {e}")
+            position_info = {'status': 'No position'}
+
         # Parse the latest RL bot log entries
         bot_status = {
             'running': is_running,
             'pid': bot_pid,
             'last_update': None,
-            'current_signal': None,
+            'current_signal': current_signal,
             'rl_decision': latest_rl_decision[0] if latest_rl_decision else None,
-            'position_info': None,
-            'market_data': None,
+            'position_info': position_info,
+            'market_data': market_data,
             'next_update': None
         }
         
@@ -2002,14 +2134,14 @@ def get_rl_bot_status():
 def get_chart_analysis():
     """API endpoint to get chart analysis data and recommendations"""
     try:
-        # Read the chart analysis JSON file
-        analysis_file = 'analysis_results_SUIUSDC.json'
+        # Read the chart analysis JSON file from shared directory
+        analysis_file = 'shared/analysis_results_SUIUSDC.json'
         if os.path.exists(analysis_file):
             with open(analysis_file, 'r') as f:
                 analysis_data = json.load(f)
-            
-            # Check if chart image exists
-            chart_file = 'chart_analysis_SUIUSDC.png'
+
+            # Check if chart image exists in shared directory
+            chart_file = 'shared/chart_analysis_SUIUSDC.png'
             chart_exists = os.path.exists(chart_file)
             
             return jsonify({
@@ -2037,7 +2169,7 @@ def get_chart_image():
     """API endpoint to serve the chart analysis image"""
     try:
         from flask import send_file
-        chart_file = 'chart_analysis_SUIUSDC.png'
+        chart_file = 'shared/chart_analysis_SUIUSDC.png'
         if os.path.exists(chart_file):
             return send_file(chart_file, mimetype='image/png')
         else:

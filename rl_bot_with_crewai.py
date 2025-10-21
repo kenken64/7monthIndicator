@@ -8,6 +8,8 @@ Combines RL enhancements with CrewAI Market Spike Agent and Circuit Breaker Prot
 from rl_bot_ready import RLEnhancedBinanceFuturesBot, logger, RL_ENHANCEMENT_ENABLED
 import logging
 from typing import Dict
+import pandas as pd
+import numpy as np
 
 # Import CrewAI integration
 from crewai_integration import (
