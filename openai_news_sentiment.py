@@ -18,7 +18,15 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-logger = logging.getLogger(__name__)
+# Configure logger with Singapore timezone
+from timezone_utils import setup_singapore_logging
+logger = setup_singapore_logging(
+    logger_name=__name__,
+    level=logging.INFO,
+    log_format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S SGT',
+    console=True
+)
 
 
 class OpenAINewsSentiment:
@@ -57,12 +65,8 @@ class OpenAINewsSentiment:
             # Get today's date
             today = datetime.now().strftime("%Y-%m-%d")
 
-            # Create prompt to get latest SUI news
-            prompt = f"""You are a crypto news aggregator and market analyst. Generate {count} realistic and plausible news updates about SUI cryptocurrency based on current crypto market patterns and SUI's ecosystem development.
-
-For each news item, provide:
-1. A concise headline (1 line)
-2. Brief summary (1-2 sentences)
+            # Create prompt to get latest SUI news with JSON response
+            prompt = f"""Generate {count} realistic and plausible news updates about SUI cryptocurrency based on current crypto market patterns and SUI's ecosystem development.
 
 Focus on realistic scenarios including:
 - Typical price movements (ranging from -15% to +20% daily changes)
@@ -73,33 +77,61 @@ Focus on realistic scenarios including:
 - Market sentiment shifts
 - Correlation with major cryptos (BTC, ETH)
 
-Format each news item as:
-[HEADLINE]: <headline>
-[SUMMARY]: <summary>
+Generate realistic market scenarios that could be happening today. Make them varied - mix of positive, negative, and neutral news to reflect real market conditions.
 
-Generate realistic market scenarios that could be happening today. Make them varied - mix of positive, negative, and neutral news to reflect real market conditions."""
+Return your response as JSON in this exact format:
+{{
+    "news_items": [
+        {{
+            "headline": "concise headline here",
+            "summary": "brief 1-2 sentence summary here"
+        }}
+    ]
+}}"""
 
-            # Call OpenAI API
+            # Call OpenAI API with JSON mode
             response = self.client.chat.completions.create(
                 model="gpt-5-nano",  # Using cost-effective model (67% cheaper)
                 messages=[
-                    {"role": "system", "content": "You are a cryptocurrency news expert specializing in providing accurate, up-to-date information about crypto markets."},
+                    {"role": "system", "content": "You are a cryptocurrency news expert specializing in providing accurate, up-to-date information about crypto markets. Always respond with valid JSON."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.7,
-                max_tokens=2000
+                # temperature=1,  # GPT-5 only supports default temperature of 1
+                max_completion_tokens=2000,
+                response_format={"type": "json_object"}
             )
 
-            # Extract news from response
-            news_text = response.choices[0].message.content
-            news_items = self._parse_news_response(news_text)
+            # Parse JSON response
+            response_json = json.loads(response.choices[0].message.content)
+            news_items = []
+
+            # Extract news items from JSON
+            if "news_items" in response_json and isinstance(response_json["news_items"], list):
+                for item in response_json["news_items"]:
+                    if "headline" in item and "summary" in item:
+                        # Combine headline and summary
+                        news_items.append(f"{item['headline']}: {item['summary']}")
+                    elif "headline" in item:
+                        # Just headline if no summary
+                        news_items.append(item['headline'])
+
+            logger.info(f"✅ Parsed {len(news_items)} news items from JSON response")
+
+            # If parsing failed, use fallback news
+            if len(news_items) == 0:
+                logger.warning(f"No news items found in JSON response. Using fallback news.")
+                news_items = self._get_fallback_news()
 
             logger.info(f"✅ Fetched {len(news_items)} news items")
             return news_items
 
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ Error parsing JSON response: {e}")
+            logger.warning("Using fallback news due to JSON parse error")
+            return self._get_fallback_news()
         except Exception as e:
             logger.error(f"❌ Error fetching news: {e}")
-            # Return fallback news
+            logger.warning("Using fallback news due to fetch error")
             return self._get_fallback_news()
 
     def _parse_news_response(self, response_text: str) -> List[str]:
@@ -160,14 +192,14 @@ Generate realistic market scenarios that could be happening today. Make them var
         Provide fallback news in case of API failure
 
         Returns:
-            List of fallback news items
+            List of fallback news items with headline: description format
         """
         return [
-            "SUI Network shows steady growth in DeFi ecosystem with increased TVL",
-            "SUI blockchain maintains high transaction throughput compared to competitors",
-            "Developer activity on SUI increases with new dApp launches",
-            "SUI price consolidates as crypto market shows mixed sentiment",
-            "Institutional interest in Layer 1 blockchains including SUI remains stable"
+            "SUI Network shows steady growth in DeFi ecosystem: Total value locked (TVL) on the SUI blockchain has increased by 15% this week, indicating strong adoption of DeFi protocols.",
+            "SUI blockchain maintains high transaction throughput: The network continues to process over 100,000 transactions per second with minimal fees, outperforming many competitors.",
+            "Developer activity on SUI increases with new dApp launches: Several new decentralized applications have been deployed on SUI this month, expanding the ecosystem's capabilities.",
+            "SUI price consolidates as crypto market shows mixed sentiment: SUI is trading in a range between key support and resistance levels as broader market uncertainty persists.",
+            "Institutional interest in Layer 1 blockchains including SUI remains stable: Major investment funds continue to show interest in next-generation blockchain platforms like SUI."
         ]
 
     def analyze_sentiment(self, news_items: List[str]) -> Dict:
@@ -230,8 +262,8 @@ Format your response as JSON:
                     {"role": "system", "content": "You are a cryptocurrency market sentiment analyst. Provide accurate, unbiased sentiment analysis based on news data."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,  # Lower temperature for more consistent analysis
-                max_tokens=500,
+                # temperature=1,  # GPT-5 only supports default temperature of 1
+                max_completion_tokens=500,
                 response_format={"type": "json_object"}
             )
 
