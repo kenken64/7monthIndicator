@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # RL Trading Bot Service
   rl-bot:
@@ -13,6 +11,8 @@ services:
       - ./trading_data.db:/app/trading_data.db
       - ./rl_trading_model.pkl:/app/rl_trading_model.pkl
       - ./shared:/app/shared
+      - ./trading_bot.log:/app/trading_bot.log
+      - ./news_sentiment.json:/app/news_sentiment.json
     environment:
       - PYTHONUNBUFFERED=1
     env_file:
@@ -119,6 +119,9 @@ services:
       - ./templates:/app/templates
       - ./static:/app/static
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./trading_bot.log:/app/trading_bot.log
+      - ./chart_analysis.log:/app/chart_analysis.log
+      - ./news_sentiment.json:/app/news_sentiment.json
     environment:
       - PYTHONUNBUFFERED=1
     env_file:
