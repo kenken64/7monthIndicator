@@ -323,6 +323,18 @@ jobs:
         USE_LOCAL_SENTIMENT=true
         EOF
 
+    - name: Create Docker secrets directory
+      run: |
+        mkdir -p secrets
+        echo "test_binance_api_key" > secrets/binance_api_key
+        echo "test_binance_secret_key" > secrets/binance_secret_key
+        echo "test_openai_api_key" > secrets/openai_api_key
+        echo "test_telegram_bot_token" > secrets/telegram_bot_token
+        echo "test_telegram_chat_id" > secrets/telegram_chat_id
+        echo "123456" > secrets/bot_control_pin
+        echo "test_news_api_key" > secrets/news_api_key
+        echo "✅ Created dummy secrets for testing"
+
     - name: Validate docker-compose.yml
       run: |
         docker compose config --quiet
