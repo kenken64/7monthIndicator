@@ -373,19 +373,21 @@ jobs:
     - name: Collect service logs
       if: always()
       run: |
-        mkdir -p logs
-        docker compose logs > logs/docker-compose.log
-        docker compose logs web-dashboard > logs/web-dashboard.log
-        docker compose logs rl-trading-bot > logs/rl-bot.log
-        docker compose logs chart-analysis-bot > logs/chart-bot.log
-        docker compose logs crewai-agent-bot > logs/crewai-bot.log
+        # Use a different directory name to avoid conflicts with Docker volumes
+        mkdir -p ci-logs
+        docker compose logs > ci-logs/docker-compose.log 2>&1 || echo "Failed to collect compose logs"
+        docker compose logs web-dashboard > ci-logs/web-dashboard.log 2>&1 || echo "Failed to collect web-dashboard logs"
+        docker compose logs rl-trading-bot > ci-logs/rl-bot.log 2>&1 || echo "Failed to collect rl-bot logs"
+        docker compose logs chart-analysis-bot > ci-logs/chart-bot.log 2>&1 || echo "Failed to collect chart-bot logs"
+        docker compose logs crewai-agent-bot > ci-logs/crewai-bot.log 2>&1 || echo "Failed to collect crewai-bot logs"
+        echo "✅ Logs collected"
 
     - name: Upload logs
       if: always()
       uses: actions/upload-artifact@v4
       with:
         name: docker-compose-logs-${{ github.run_number }}
-        path: logs/
+        path: ci-logs/
         retention-days: 7
 
     - name: Cleanup
