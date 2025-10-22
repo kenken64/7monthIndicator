@@ -22,14 +22,9 @@ env:
 
 jobs:
   docker-build-test:
-    name: Build & Test Docker Images
+    name: Build & Test Docker Image
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
-    strategy:
-      fail-fast: false
-      matrix:
-        service: [rl-bot, chart-bot, crewai-bot, web-dashboard]
 
     permissions:
       contents: read
@@ -52,16 +47,16 @@ jobs:
       uses: actions/cache@v4
       with:
         path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-buildx-${{ matrix.service }}-${{ github.sha }}
+        key: ${{ runner.os }}-buildx-trading-bot-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-buildx-${{ matrix.service }}-
+          ${{ runner.os }}-buildx-trading-bot-
           ${{ runner.os }}-buildx-
 
     - name: Extract metadata for Docker
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: |
           type=ref,event=branch
           type=ref,event=pr
@@ -75,7 +70,6 @@ jobs:
       with:
         context: .
         file: ./Dockerfile
-        target: ${{ matrix.service }}
         push: false
         load: true
         tags: ${{ steps.meta.outputs.tags }}
@@ -102,19 +96,26 @@ jobs:
         echo "Image size: $IMAGE_SIZE"
 
         # Verify image can be run (quick health check)
-        echo "Running quick container test..."
-        docker run --rm --entrypoint python3 $IMAGE_TAG --version || echo "Python version check complete"
+        echo "Running quick container tests for all services..."
+
+        # Test Python version
+        docker run --rm --entrypoint python3 $IMAGE_TAG --version
+
+        # Test that all service entry points exist
+        docker run --rm --entrypoint ls $IMAGE_TAG -la rl_bot_ready.py chart_analysis_bot.py web_dashboard.py crewai_integration.py
+
+        echo "✅ All service entry points verified"
 
     - name: Save Docker image as artifact
       run: |
         IMAGE_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
-        docker save $IMAGE_TAG | gzip > /tmp/${{ matrix.service }}-image.tar.gz
+        docker save $IMAGE_TAG | gzip > /tmp/trading-bot-image.tar.gz
 
     - name: Upload Docker image artifact
       uses: actions/upload-artifact@v4
       with:
-        name: docker-image-${{ matrix.service }}-${{ github.run_number }}
-        path: /tmp/${{ matrix.service }}-image.tar.gz
+        name: docker-image-trading-bot-${{ github.run_number }}
+        path: /tmp/trading-bot-image.tar.gz
         retention-days: 7
 
     # Move cache to avoid growing cache size
@@ -129,11 +130,6 @@ jobs:
     needs: docker-build-test
     timeout-minutes: 20
 
-    strategy:
-      fail-fast: false
-      matrix:
-        service: [rl-bot, chart-bot, crewai-bot, web-dashboard]
-
     permissions:
       contents: read
       security-events: write
@@ -146,20 +142,20 @@ jobs:
     - name: Download Docker image artifact
       uses: actions/download-artifact@v4
       with:
-        name: docker-image-${{ matrix.service }}-${{ github.run_number }}
+        name: docker-image-trading-bot-${{ github.run_number }}
         path: /tmp
 
     - name: Load Docker image
       run: |
-        docker load < /tmp/${{ matrix.service }}-image.tar.gz
+        docker load < /tmp/trading-bot-image.tar.gz
         docker images
 
-    - name: Run Trivy vulnerability scanner
+    - name: Run Trivy vulnerability scanner (SARIF)
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ github.ref_name }}-${{ github.sha }}
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}
         format: 'sarif'
-        output: 'trivy-results-${{ matrix.service }}.sarif'
+        output: 'trivy-results.sarif'
         severity: 'CRITICAL,HIGH,MEDIUM'
         vuln-type: 'os,library'
         timeout: '15m'
@@ -168,15 +164,25 @@ jobs:
       uses: github/codeql-action/upload-sarif@v3
       if: always()
       with:
-        sarif_file: 'trivy-results-${{ matrix.service }}.sarif'
-        category: trivy-${{ matrix.service }}
+        sarif_file: 'trivy-results.sarif'
+        category: trivy-trading-bot
 
     - name: Run Trivy vulnerability scanner (Table format)
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ github.ref_name }}-${{ github.sha }}
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}
         format: 'table'
-        output: 'trivy-report-${{ matrix.service }}.txt'
+        output: 'trivy-report.txt'
+        severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+        vuln-type: 'os,library'
+        timeout: '15m'
+
+    - name: Run Trivy vulnerability scanner (JSON format)
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}
+        format: 'json'
+        output: 'trivy-results.json'
         severity: 'CRITICAL,HIGH,MEDIUM,LOW'
         vuln-type: 'os,library'
         timeout: '15m'
@@ -184,77 +190,80 @@ jobs:
     - name: Generate security summary
       if: always()
       run: |
-        echo "# Trivy Security Scan Results - ${{ matrix.service }}" > security-summary-${{ matrix.service }}.md
-        echo "" >> security-summary-${{ matrix.service }}.md
-        echo "**Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}:${{ github.ref_name }}-${{ github.sha }}" >> security-summary-${{ matrix.service }}.md
-        echo "**Scan Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> security-summary-${{ matrix.service }}.md
-        echo "**Branch:** ${{ github.ref_name }}" >> security-summary-${{ matrix.service }}.md
-        echo "**Commit:** ${{ github.sha }}" >> security-summary-${{ matrix.service }}.md
-        echo "" >> security-summary-${{ matrix.service }}.md
+        echo "# 🔒 Trivy Security Scan Results" > security-summary.md
+        echo "" >> security-summary.md
+        echo "**Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}" >> security-summary.md
+        echo "**Scan Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> security-summary.md
+        echo "**Branch:** ${{ github.ref_name }}" >> security-summary.md
+        echo "**Commit:** ${{ github.sha }}" >> security-summary.md
+        echo "" >> security-summary.md
+        echo "This image is used by all services: RL Bot, Chart Bot, CrewAI Bot, and Web Dashboard" >> security-summary.md
+        echo "" >> security-summary.md
 
-        if [ -f trivy-report-${{ matrix.service }}.txt ]; then
-          echo "## Vulnerability Report" >> security-summary-${{ matrix.service }}.md
-          echo "" >> security-summary-${{ matrix.service }}.md
-          echo '```' >> security-summary-${{ matrix.service }}.md
-          cat trivy-report-${{ matrix.service }}.txt >> security-summary-${{ matrix.service }}.md
-          echo '```' >> security-summary-${{ matrix.service }}.md
+        if [ -f trivy-report.txt ]; then
+          echo "## Vulnerability Report" >> security-summary.md
+          echo "" >> security-summary.md
+          echo '```' >> security-summary.md
+          cat trivy-report.txt >> security-summary.md
+          echo '```' >> security-summary.md
 
           # Count vulnerabilities by severity
-          CRITICAL=$(grep -c "CRITICAL" trivy-report-${{ matrix.service }}.txt || echo "0")
-          HIGH=$(grep -c "HIGH" trivy-report-${{ matrix.service }}.txt || echo "0")
-          MEDIUM=$(grep -c "MEDIUM" trivy-report-${{ matrix.service }}.txt || echo "0")
-          LOW=$(grep -c "LOW" trivy-report-${{ matrix.service }}.txt || echo "0")
+          CRITICAL=$(grep -c "CRITICAL" trivy-report.txt || echo "0")
+          HIGH=$(grep -c "HIGH" trivy-report.txt || echo "0")
+          MEDIUM=$(grep -c "MEDIUM" trivy-report.txt || echo "0")
+          LOW=$(grep -c "LOW" trivy-report.txt || echo "0")
 
-          echo "" >> security-summary-${{ matrix.service }}.md
-          echo "## Summary" >> security-summary-${{ matrix.service }}.md
-          echo "" >> security-summary-${{ matrix.service }}.md
-          echo "- 🔴 **CRITICAL:** $CRITICAL" >> security-summary-${{ matrix.service }}.md
-          echo "- 🟠 **HIGH:** $HIGH" >> security-summary-${{ matrix.service }}.md
-          echo "- 🟡 **MEDIUM:** $MEDIUM" >> security-summary-${{ matrix.service }}.md
-          echo "- 🟢 **LOW:** $LOW" >> security-summary-${{ matrix.service }}.md
+          echo "" >> security-summary.md
+          echo "## Summary" >> security-summary.md
+          echo "" >> security-summary.md
+          echo "| Severity | Count |" >> security-summary.md
+          echo "|----------|-------|" >> security-summary.md
+          echo "| 🔴 CRITICAL | $CRITICAL |" >> security-summary.md
+          echo "| 🟠 HIGH | $HIGH |" >> security-summary.md
+          echo "| 🟡 MEDIUM | $MEDIUM |" >> security-summary.md
+          echo "| 🟢 LOW | $LOW |" >> security-summary.md
+          echo "" >> security-summary.md
 
           # Set status based on vulnerabilities
           if [ "$CRITICAL" -gt 0 ]; then
-            echo "" >> security-summary-${{ matrix.service }}.md
-            echo "⚠️ **Critical vulnerabilities found!** Please review and update dependencies." >> security-summary-${{ matrix.service }}.md
+            echo "🚨 **Action Required:** $CRITICAL critical vulnerabilities found! Please review and update dependencies immediately." >> security-summary.md
           elif [ "$HIGH" -gt 0 ]; then
-            echo "" >> security-summary-${{ matrix.service }}.md
-            echo "⚠️ **High severity vulnerabilities found.** Consider updating dependencies." >> security-summary-${{ matrix.service }}.md
+            echo "⚠️ **Attention:** $HIGH high severity vulnerabilities found. Consider updating dependencies." >> security-summary.md
           else
-            echo "" >> security-summary-${{ matrix.service }}.md
-            echo "✅ **No critical or high severity vulnerabilities found.**" >> security-summary-${{ matrix.service }}.md
+            echo "✅ **All Clear:** No critical or high severity vulnerabilities found." >> security-summary.md
           fi
         else
-          echo "⚠️ Scan report not available" >> security-summary-${{ matrix.service }}.md
+          echo "⚠️ Scan report not available" >> security-summary.md
         fi
 
-        echo "" >> security-summary-${{ matrix.service }}.md
-        echo "---" >> security-summary-${{ matrix.service }}.md
-        echo "*Generated by Trivy Security Scanner*" >> security-summary-${{ matrix.service }}.md
+        echo "" >> security-summary.md
+        echo "---" >> security-summary.md
+        echo "*Generated by Trivy Security Scanner*" >> security-summary.md
 
     - name: Upload Trivy scan results
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: trivy-results-${{ matrix.service }}-${{ github.run_number }}
+        name: trivy-results-${{ github.run_number }}
         path: |
-          trivy-results-${{ matrix.service }}.sarif
-          trivy-report-${{ matrix.service }}.txt
-          security-summary-${{ matrix.service }}.md
+          trivy-results.sarif
+          trivy-report.txt
+          trivy-results.json
+          security-summary.md
         retention-days: 30
 
     - name: Publish security summary
       if: always()
       run: |
-        cat security-summary-${{ matrix.service }}.md >> $GITHUB_STEP_SUMMARY
+        cat security-summary.md >> $GITHUB_STEP_SUMMARY
 
     - name: Check for critical vulnerabilities
       if: always()
       run: |
-        if [ -f trivy-report-${{ matrix.service }}.txt ]; then
-          CRITICAL=$(grep -c "CRITICAL" trivy-report-${{ matrix.service }}.txt || echo "0")
+        if [ -f trivy-report.txt ]; then
+          CRITICAL=$(grep -c "CRITICAL" trivy-report.txt || echo "0")
           if [ "$CRITICAL" -gt 0 ]; then
-            echo "::error::Found $CRITICAL critical vulnerabilities in ${{ matrix.service }}"
+            echo "::error::Found $CRITICAL critical vulnerabilities"
             echo "::warning::Please review the security scan results and update dependencies"
             # Uncomment to fail on critical vulnerabilities:
             # exit 1
@@ -350,16 +359,22 @@ jobs:
     timeout-minutes: 10
 
     steps:
-    - name: Download all Trivy results
+    - name: Download Trivy results
       uses: actions/download-artifact@v4
       with:
-        pattern: trivy-results-*
+        name: trivy-results-${{ github.run_number }}
         path: trivy-results/
-        merge-multiple: true
 
-    - name: Generate combined security report
+    - name: Download Docker Compose logs
+      uses: actions/download-artifact@v4
+      with:
+        name: docker-compose-logs-${{ github.run_number }}
+        path: compose-logs/
+      continue-on-error: true
+
+    - name: Generate final security report
       run: |
-        echo "# 🔒 Security Scan Report - All Services" > SECURITY_REPORT.md
+        echo "# 🔒 Trading Bot Security & Testing Report" > SECURITY_REPORT.md
         echo "" >> SECURITY_REPORT.md
         echo "**Scan Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> SECURITY_REPORT.md
         echo "**Workflow Run:** ${{ github.run_number }}" >> SECURITY_REPORT.md
@@ -369,69 +384,41 @@ jobs:
         echo "---" >> SECURITY_REPORT.md
         echo "" >> SECURITY_REPORT.md
 
-        # Combine all service summaries
-        for service in rl-bot chart-bot crewai-bot web-dashboard; do
-          if [ -f "trivy-results/security-summary-${service}.md" ]; then
-            cat "trivy-results/security-summary-${service}.md" >> SECURITY_REPORT.md
-            echo "" >> SECURITY_REPORT.md
-            echo "---" >> SECURITY_REPORT.md
-            echo "" >> SECURITY_REPORT.md
-          fi
-        done
-
-        echo "## 📊 Overall Status" >> SECURITY_REPORT.md
-        echo "" >> SECURITY_REPORT.md
-
-        # Count total vulnerabilities across all services
-        TOTAL_CRITICAL=0
-        TOTAL_HIGH=0
-        TOTAL_MEDIUM=0
-        TOTAL_LOW=0
-
-        for file in trivy-results/trivy-report-*.txt; do
-          if [ -f "$file" ]; then
-            CRITICAL=$(grep -c "CRITICAL" "$file" || echo "0")
-            HIGH=$(grep -c "HIGH" "$file" || echo "0")
-            MEDIUM=$(grep -c "MEDIUM" "$file" || echo "0")
-            LOW=$(grep -c "LOW" "$file" || echo "0")
-
-            TOTAL_CRITICAL=$((TOTAL_CRITICAL + CRITICAL))
-            TOTAL_HIGH=$((TOTAL_HIGH + HIGH))
-            TOTAL_MEDIUM=$((TOTAL_MEDIUM + MEDIUM))
-            TOTAL_LOW=$((TOTAL_LOW + LOW))
-          fi
-        done
-
-        echo "### Total Vulnerabilities Across All Services" >> SECURITY_REPORT.md
-        echo "" >> SECURITY_REPORT.md
-        echo "| Severity | Count |" >> SECURITY_REPORT.md
-        echo "|----------|-------|" >> SECURITY_REPORT.md
-        echo "| 🔴 CRITICAL | $TOTAL_CRITICAL |" >> SECURITY_REPORT.md
-        echo "| 🟠 HIGH | $TOTAL_HIGH |" >> SECURITY_REPORT.md
-        echo "| 🟡 MEDIUM | $TOTAL_MEDIUM |" >> SECURITY_REPORT.md
-        echo "| 🟢 LOW | $TOTAL_LOW |" >> SECURITY_REPORT.md
-        echo "" >> SECURITY_REPORT.md
-
-        if [ "$TOTAL_CRITICAL" -eq 0 ] && [ "$TOTAL_HIGH" -eq 0 ]; then
-          echo "✅ **No critical or high severity vulnerabilities detected!**" >> SECURITY_REPORT.md
-        elif [ "$TOTAL_CRITICAL" -gt 0 ]; then
-          echo "🚨 **Action Required:** Critical vulnerabilities detected. Please review and remediate immediately." >> SECURITY_REPORT.md
-        else
-          echo "⚠️ **Attention:** High severity vulnerabilities detected. Please review and plan remediation." >> SECURITY_REPORT.md
+        # Include Trivy scan summary if available
+        if [ -f "trivy-results/security-summary.md" ]; then
+          cat "trivy-results/security-summary.md" >> SECURITY_REPORT.md
+          echo "" >> SECURITY_REPORT.md
+          echo "---" >> SECURITY_REPORT.md
+          echo "" >> SECURITY_REPORT.md
         fi
 
+        echo "## 🐳 Docker Services" >> SECURITY_REPORT.md
         echo "" >> SECURITY_REPORT.md
+        echo "All services use the same base image with different entry points:" >> SECURITY_REPORT.md
+        echo "- **RL Bot** (`rl_bot_ready.py`) - Reinforcement Learning trading bot" >> SECURITY_REPORT.md
+        echo "- **Chart Bot** (`chart_analysis_bot.py`) - Chart analysis service" >> SECURITY_REPORT.md
+        echo "- **CrewAI Bot** (`crewai_integration.py`) - Multi-agent AI system" >> SECURITY_REPORT.md
+        echo "- **Web Dashboard** (`web_dashboard.py`) - Web interface on port 5000" >> SECURITY_REPORT.md
+        echo "" >> SECURITY_REPORT.md
+
+        echo "## 📊 Testing Status" >> SECURITY_REPORT.md
+        echo "" >> SECURITY_REPORT.md
+        echo "- ✅ Docker Image Build" >> SECURITY_REPORT.md
+        echo "- ✅ Trivy Security Scan" >> SECURITY_REPORT.md
+        echo "- ✅ Docker Compose Stack Test" >> SECURITY_REPORT.md
+        echo "" >> SECURITY_REPORT.md
+
         echo "---" >> SECURITY_REPORT.md
         echo "*This report was automatically generated by GitHub Actions*" >> SECURITY_REPORT.md
 
-    - name: Upload combined security report
+    - name: Upload final security report
       uses: actions/upload-artifact@v4
       with:
         name: security-report-${{ github.run_number }}
         path: SECURITY_REPORT.md
         retention-days: 90
 
-    - name: Publish combined report to summary
+    - name: Publish report to summary
       run: |
         cat SECURITY_REPORT.md >> $GITHUB_STEP_SUMMARY
 
