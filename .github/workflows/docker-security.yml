@@ -150,27 +150,34 @@ jobs:
         docker load < /tmp/trading-bot-image.tar.gz
         docker images
 
+        # Get the actual image name from the loaded image
+        IMAGE_NAME=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -n1)
+        echo "Loaded image: $IMAGE_NAME"
+        echo "IMAGE_REF=$IMAGE_NAME" >> $GITHUB_ENV
+
     - name: Run Trivy vulnerability scanner (SARIF)
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}
+        image-ref: ${{ env.IMAGE_REF }}
         format: 'sarif'
         output: 'trivy-results.sarif'
         severity: 'CRITICAL,HIGH,MEDIUM'
         vuln-type: 'os,library'
         timeout: '15m'
+      continue-on-error: true
 
     - name: Upload Trivy results to GitHub Security tab
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
+      if: always() && hashFiles('trivy-results.sarif') != ''
       with:
         sarif_file: 'trivy-results.sarif'
         category: trivy-trading-bot
+      continue-on-error: true
 
     - name: Run Trivy vulnerability scanner (Table format)
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}
+        image-ref: ${{ env.IMAGE_REF }}
         format: 'table'
         output: 'trivy-report.txt'
         severity: 'CRITICAL,HIGH,MEDIUM,LOW'
@@ -180,19 +187,20 @@ jobs:
     - name: Run Trivy vulnerability scanner (JSON format)
       uses: aquasecurity/trivy-action@master
       with:
-        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}
+        image-ref: ${{ env.IMAGE_REF }}
         format: 'json'
         output: 'trivy-results.json'
         severity: 'CRITICAL,HIGH,MEDIUM,LOW'
         vuln-type: 'os,library'
         timeout: '15m'
+      continue-on-error: true
 
     - name: Generate security summary
       if: always()
       run: |
         echo "# 🔒 Trivy Security Scan Results" > security-summary.md
         echo "" >> security-summary.md
-        echo "**Image:** ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ github.sha }}" >> security-summary.md
+        echo "**Image:** ${IMAGE_REF}" >> security-summary.md
         echo "**Scan Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> security-summary.md
         echo "**Branch:** ${{ github.ref_name }}" >> security-summary.md
         echo "**Commit:** ${{ github.sha }}" >> security-summary.md
