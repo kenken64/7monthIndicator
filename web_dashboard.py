@@ -15,6 +15,12 @@ and analysis for the RL-enhanced trading bot. Features include:
 - RL decision analysis and insights
 """
 
+# Initialize Docker secrets before any other imports
+try:
+    import init_secrets  # This loads Docker secrets into environment variables
+except ImportError:
+    pass  # Running in development mode without Docker secrets
+
 import json
 import os
 import time
@@ -82,7 +88,7 @@ Respond only with valid JSON."""
         }
         
         payload = {
-            "model": "gpt-4o-mini",  # 60x cheaper than GPT-4
+            "model": "gpt-5-nano",  # 67% cheaper than gpt-4o-mini
             "messages": [
                 {
                     "role": "user", 
@@ -240,11 +246,16 @@ def validate_6_digit_pin(provided_pin: str, client_ip: str) -> dict:
 @app.route('/')
 def dashboard():
     """Main dashboard page
-    
+
     Serves the primary dashboard interface with real-time trading
     data, performance metrics, and system status.
     """
     return render_template('dashboard.html')
+
+@app.route('/health')
+def health():
+    """Health check endpoint for Docker health checks"""
+    return {'status': 'healthy'}, 200
 
 @app.route('/test')
 def test_projections():
@@ -398,24 +409,53 @@ def get_signals(symbol):
 @app.route('/api/trades/<symbol>')
 def get_trades(symbol):
     """API endpoint to get recent trades
-    
+
     Fetches recent trading activity including entry/exit prices,
-    quantities, PnL, and trade status.
-    
+    quantities, PnL, and trade status. For open trades, calculates
+    unrealized PnL based on current market price.
+
     Args:
         symbol: Trading pair symbol
-        
+
     Query Parameters:
         limit: Maximum number of trades to return (default: 20)
-        
+
     Returns:
         JSON response with trade history data
     """
     limit = request.args.get('limit', 20, type=int)
     db = get_database()
-    
+
     try:
         trades = db.get_recent_trades(symbol, limit)
+
+        # Get current price for calculating unrealized PnL on open trades
+        from binance.client import Client
+        import os
+
+        api_key = os.getenv('BINANCE_API_KEY')
+        secret_key = os.getenv('BINANCE_SECRET_KEY')
+        client = Client(api_key, secret_key, testnet=False)
+
+        try:
+            ticker = client.get_symbol_ticker(symbol=symbol)
+            current_price = float(ticker['price'])
+
+            # Calculate unrealized PnL for open trades
+            for trade in trades:
+                if trade['status'] == 'OPEN':
+                    # Calculate unrealized PnL based on current price
+                    if trade['side'] == 'BUY':
+                        unrealized_pnl = (current_price - trade['entry_price']) * trade['quantity']
+                    else:  # SELL
+                        unrealized_pnl = (trade['entry_price'] - current_price) * trade['quantity']
+
+                    # Update the trade's PnL with unrealized PnL
+                    trade['pnl'] = unrealized_pnl
+                    trade['pnl_percentage'] = (unrealized_pnl / (trade['entry_price'] * trade['quantity'])) * 100
+        except Exception as price_error:
+            logger.warning(f"Could not fetch current price for unrealized PnL: {price_error}")
+
         return jsonify({
             'success': True,
             'data': trades
@@ -452,8 +492,45 @@ def get_open_positions(symbol):
     
     try:
         # Get positions from database - Local trade records
-        db_positions = db.get_open_trades(symbol)
-        
+        raw_db_positions = db.get_open_trades(symbol)
+
+        # Aggregate fills with the same order_id into single positions
+        aggregated_positions = {}
+        for trade in raw_db_positions:
+            order_id = trade.get('order_id')
+            if not order_id:
+                # If no order_id, treat as individual position
+                key = trade['id']
+                aggregated_positions[key] = trade
+            else:
+                # Aggregate by order_id
+                if order_id not in aggregated_positions:
+                    aggregated_positions[order_id] = {
+                        'id': trade['id'],
+                        'symbol': trade['symbol'],
+                        'side': trade['side'],
+                        'quantity': 0,
+                        'entry_price': 0,
+                        'total_cost': 0,
+                        'timestamp': trade['timestamp'],
+                        'status': trade['status'],
+                        'order_id': order_id,
+                        'liquidation_price': trade.get('liquidation_price'),
+                        'stop_loss_price': trade.get('stop_loss_price'),
+                        'take_profit_price': trade.get('take_profit_price'),
+                        'created_at': trade.get('created_at'),
+                        'updated_at': trade.get('updated_at')
+                    }
+
+                # Aggregate quantity and calculate weighted average entry price
+                pos = aggregated_positions[order_id]
+                pos['total_cost'] += trade['quantity'] * trade['entry_price']
+                pos['quantity'] += trade['quantity']
+                pos['entry_price'] = pos['total_cost'] / pos['quantity']
+
+        # Convert back to list
+        db_positions = list(aggregated_positions.values())
+
         # Also get live positions from Binance API - Real-time exchange data
         try:
             api_key = os.getenv('BINANCE_API_KEY')
@@ -462,7 +539,14 @@ def get_open_positions(symbol):
             if api_key and secret_key:
                 client = Client(api_key, secret_key, testnet=False)
                 live_positions = client.futures_position_information()
-                
+
+                # Get open orders to find TP/SL orders
+                try:
+                    open_orders = client.futures_get_open_orders(symbol=symbol)
+                except Exception as e:
+                    logger.warning(f"Could not fetch open orders: {e}")
+                    open_orders = []
+
                 # Filter for requested symbol and non-zero positions from Binance
                 binance_positions = []
                 for pos in live_positions:
@@ -470,7 +554,7 @@ def get_open_positions(symbol):
                         position_amt = float(pos['positionAmt'])
                         entry_price = float(pos['entryPrice'])
                         mark_price = float(pos['markPrice'])
-                        
+
                         # Calculate PnL percentage with leverage (assuming 50x)
                         if entry_price > 0:
                             if position_amt > 0:  # LONG
@@ -479,7 +563,17 @@ def get_open_positions(symbol):
                                 pnl_percentage = ((entry_price - mark_price) / entry_price) * 100 * 50
                         else:
                             pnl_percentage = 0
-                        
+
+                        # Find TP/SL orders for this position
+                        take_profit_price = None
+                        stop_loss_price = None
+
+                        for order in open_orders:
+                            if order['type'] == 'TAKE_PROFIT_MARKET' or order['type'] == 'TAKE_PROFIT':
+                                take_profit_price = float(order.get('stopPrice', order.get('price', 0)))
+                            elif order['type'] == 'STOP_MARKET' or order['type'] == 'STOP':
+                                stop_loss_price = float(order.get('stopPrice', order.get('price', 0)))
+
                         binance_positions.append({
                             'symbol': pos['symbol'],
                             'side': 'LONG' if position_amt > 0 else 'SHORT',
@@ -490,6 +584,8 @@ def get_open_positions(symbol):
                             'liquidation_price': float(pos['liquidationPrice']) if pos['liquidationPrice'] != '0' else 0,
                             'percentage': pnl_percentage,
                             'margin_type': pos.get('marginType', 'UNKNOWN'),
+                            'take_profit_price': take_profit_price,
+                            'stop_loss_price': stop_loss_price,
                             'source': 'binance_live'
                         })
                 
@@ -592,45 +688,76 @@ def get_chart_data(symbol):
 @app.route('/api/system-stats')
 def get_system_stats():
     """API endpoint to get system statistics
-    
+
     Returns overall system health and activity metrics including:
     - Total signals and trades count
-    - Open position count
+    - Open position count (from live Binance API)
     - Last signal timestamp
     - Available trading symbols
-    
+
     Returns:
         JSON response with system statistics
     """
+    from binance.client import Client
+    from dotenv import load_dotenv
+
+    load_dotenv()
     db = get_database()
-    
+
     try:
         with db.get_connection() as conn:
             # Get total counts
             stats = {}
-            
+
             cursor = conn.execute('SELECT COUNT(*) as count FROM signals')
             stats['total_signals'] = cursor.fetchone()['count']
-            
+
             cursor = conn.execute('SELECT COUNT(*) as count FROM trades')
             stats['total_trades'] = cursor.fetchone()['count']
-            
-            cursor = conn.execute('SELECT COUNT(*) as count FROM trades WHERE status = "OPEN"')
-            stats['open_trades'] = cursor.fetchone()['count']
-            
+
+            # Get live open positions count from Binance API instead of database
+            open_positions_count = 0
+            try:
+                api_key = os.getenv('BINANCE_API_KEY')
+                secret_key = os.getenv('BINANCE_SECRET_KEY')
+
+                if api_key and secret_key:
+                    client = Client(api_key, secret_key, testnet=False)
+                    live_positions = client.futures_position_information()
+
+                    # Count non-zero positions from Binance
+                    for pos in live_positions:
+                        if float(pos['positionAmt']) != 0:
+                            open_positions_count += 1
+
+                    logger.debug(f"Found {open_positions_count} live open positions from Binance")
+                else:
+                    # Fallback to database if no API credentials
+                    cursor = conn.execute('SELECT COUNT(*) as count FROM trades WHERE status = "OPEN"')
+                    open_positions_count = cursor.fetchone()['count']
+                    logger.debug(f"Using database count: {open_positions_count} open trades")
+
+            except Exception as api_error:
+                logger.warning(f"Error fetching live positions count, using database: {api_error}")
+                # Fallback to database on error
+                cursor = conn.execute('SELECT COUNT(*) as count FROM trades WHERE status = "OPEN"')
+                open_positions_count = cursor.fetchone()['count']
+
+            stats['open_trades'] = open_positions_count
+
             # Get last signal time
             cursor = conn.execute('SELECT MAX(timestamp) as last_signal FROM signals')
             stats['last_signal'] = cursor.fetchone()['last_signal']
-            
+
             # Get symbols
             cursor = conn.execute('SELECT DISTINCT symbol FROM signals ORDER BY symbol')
             stats['symbols'] = [row['symbol'] for row in cursor.fetchall()]
-            
+
             return jsonify({
                 'success': True,
                 'data': stats
             })
-            
+
     except Exception as e:
         logger.error(f"Error getting system stats: {e}")
         return jsonify({
@@ -952,7 +1079,7 @@ def get_unified_signals(symbol):
             }
 
         # Load chart analysis
-        chart_file = 'analysis_results_SUIUSDC.json'
+        chart_file = 'shared/analysis_results_SUIUSDC.json'
         if os.path.exists(chart_file):
             with open(chart_file, 'r') as f:
                 chart_data = json.load(f)
@@ -1112,25 +1239,39 @@ def get_unified_signals(symbol):
                 news_data = json.load(f)
 
                 # Map sentiment to action
-                sentiment = news_data.get('sentiment', 'Neutral')
-                if sentiment.lower() in ['bullish', 'positive']:
-                    action = 'BUY'
-                elif sentiment.lower() in ['bearish', 'negative']:
-                    action = 'SELL'
+                # Handle both old format (string) and new format (dict)
+                sentiment_data = news_data.get('sentiment', 'Neutral')
+                if isinstance(sentiment_data, dict):
+                    # New format: sentiment is a dict with label, score, confidence
+                    sentiment_label = sentiment_data.get('label', 'neutral')
+                    raw_score = sentiment_data.get('score', 0.5)
+                    confidence = sentiment_data.get('confidence', 50.0)
+                else:
+                    # Old format: sentiment is a string
+                    sentiment_label = sentiment_data
+                    raw_score = news_data.get('sentiment_score', 0)
+                    confidence = news_data.get('confidence', 0) * 10 if news_data.get('confidence', 0) <= 1 else news_data.get('confidence', 0)
+
+                # Map sentiment label to action
+                if isinstance(sentiment_label, str):
+                    if sentiment_label.lower() in ['bullish', 'positive']:
+                        action = 'BUY'
+                    elif sentiment_label.lower() in ['bearish', 'negative']:
+                        action = 'SELL'
+                    else:
+                        action = 'HOLD'
                 else:
                     action = 'HOLD'
 
                 # Convert sentiment_score to 0-10 scale for consistency
-                # sentiment_score is typically -1 to 1, convert to 0-10 scale
-                raw_score = news_data.get('sentiment_score', 0)
-                # Map: -1 (bearish) -> 0, 0 (neutral) -> 5, 1 (bullish) -> 10
-                score = (raw_score + 1) * 5
-
-                # Get confidence (1-10 scale)
-                confidence = news_data.get('confidence', 0) * 10 if news_data.get('confidence', 0) <= 1 else news_data.get('confidence', 0)
+                # sentiment_score is typically 0-1, convert to 0-10 scale
+                if raw_score <= 1:
+                    score = raw_score * 10
+                else:
+                    score = raw_score
 
                 unified_data['signal_sources']['news_sentiment'] = {
-                    'sentiment': sentiment,
+                    'sentiment': sentiment_label,
                     'action': action,  # Add action field for frontend
                     'score': score,
                     'confidence': confidence,
@@ -1389,12 +1530,12 @@ def get_ai_agent_logs():
     try:
         agent_logs = []
 
-        # Read from trading_bot.log which contains CrewAI integration logs
-        log_file = 'logs/trading_bot.log'
+        # Read from CrewAI bot log file (shared volume)
+        crewai_log_file = 'logs/crewai_bot.log'
 
-        if os.path.exists(log_file):
+        if os.path.exists(crewai_log_file):
             try:
-                with open(log_file, 'r') as f:
+                with open(crewai_log_file, 'r') as f:
                     file_lines = f.readlines()
                     # Get more lines than requested to filter
                     recent_lines = file_lines[-lines*3:] if len(file_lines) > lines*3 else file_lines
@@ -1640,6 +1781,75 @@ def get_bot_pause_status():
             'error': str(e)
         }), 500
 
+@app.route('/api/connectivity-status')
+def get_connectivity_status():
+    """API endpoint to check connectivity status of external APIs
+
+    Tests connectivity to:
+    - Binance API (futures account endpoint)
+    - OpenAI API (models list endpoint)
+
+    Returns:
+        JSON response with connectivity status for each service
+    """
+    from binance.client import Client
+    import openai
+
+    status = {
+        'binance': {'connected': False, 'error': None, 'latency_ms': None},
+        'openai': {'connected': False, 'error': None, 'latency_ms': None}
+    }
+
+    # Test Binance API
+    try:
+        api_key = os.getenv('BINANCE_API_KEY')
+        secret_key = os.getenv('BINANCE_SECRET_KEY')
+
+        if api_key and secret_key:
+            start_time = time.time()
+            client = Client(api_key, secret_key, testnet=False)
+            # Test with a simple API call
+            client.futures_account()
+            latency = (time.time() - start_time) * 1000
+            status['binance']['connected'] = True
+            status['binance']['latency_ms'] = round(latency, 2)
+        else:
+            status['binance']['error'] = 'API credentials not configured'
+    except Exception as e:
+        status['binance']['error'] = str(e)[:100]  # Limit error message length
+
+    # Test OpenAI API
+    try:
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+
+        if openai_api_key:
+            start_time = time.time()
+            headers = {
+                "Authorization": f"Bearer {openai_api_key}",
+                "Content-Type": "application/json"
+            }
+            response = requests.get(
+                "https://api.openai.com/v1/models",
+                headers=headers,
+                timeout=5
+            )
+            latency = (time.time() - start_time) * 1000
+
+            if response.status_code == 200:
+                status['openai']['connected'] = True
+                status['openai']['latency_ms'] = round(latency, 2)
+            else:
+                status['openai']['error'] = f"HTTP {response.status_code}"
+        else:
+            status['openai']['error'] = 'API key not configured'
+    except Exception as e:
+        status['openai']['error'] = str(e)[:100]  # Limit error message length
+
+    return jsonify({
+        'success': True,
+        'data': status
+    })
+
 @app.route('/api/rl-bot-status')
 def get_rl_bot_status():
     """API endpoint to get real-time RL bot status and latest decisions
@@ -1663,42 +1873,80 @@ def get_rl_bot_status():
         import os
         from datetime import datetime, timedelta
         
-        # Check if RL bot is running - use PID file for reliability
+        # Check if RL bot is running
         is_running = False
         bot_pid = None
 
         try:
-            # Method 1: Check PID file
-            pid_file = 'rl_bot.pid'
-            if os.path.exists(pid_file):
-                try:
-                    with open(pid_file, 'r') as f:
-                        pid_content = f.read().strip()
-                        if pid_content:
-                            # Verify the process is actually running
-                            result = subprocess.run(['ps', '-p', pid_content], capture_output=True, text=True, timeout=5)
-                            if result.returncode == 0 and 'python' in result.stdout:
-                                bot_pid = pid_content
-                                is_running = True
-                                logger.info(f"Found RL bot running with PID: {bot_pid} (from PID file)")
-                except Exception as e:
-                    logger.warning(f"Error reading PID file: {e}")
+            # Check if running in Docker by looking for /.dockerenv
+            in_docker = os.path.exists('/.dockerenv')
 
-            # Method 2: Fallback to ps aux if PID file method failed
-            if not is_running:
-                result = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=5)
-                if 'rl_bot_ready.py' in result.stdout:
-                    is_running = True
-                    # Get PID if running
-                    for line in result.stdout.split('\n'):
-                        if 'rl_bot_ready.py' in line and 'grep' not in line:
-                            parts = line.split()
-                            if len(parts) >= 2:
-                                bot_pid = parts[1]
-                                logger.info(f"Found RL bot running with PID: {bot_pid} (from ps aux)")
-                            break
+            if in_docker:
+                # Method 1: Docker environment - check database activity
+                # If bot is running, it should be writing signals regularly
+                db_temp = get_database()
+                recent_signals = db_temp.get_recent_signals(symbol='SUIUSDC', limit=1)
+                if recent_signals:
+                    latest_signal = recent_signals[0]
+                    if 'timestamp' in latest_signal:
+                        try:
+                            # Parse timestamp and check age
+                            signal_time_str = latest_signal['timestamp']
+                            # Handle different timestamp formats
+                            if 'T' in signal_time_str:
+                                signal_time = datetime.fromisoformat(signal_time_str.replace('Z', '+00:00'))
+                            else:
+                                signal_time = datetime.strptime(signal_time_str, '%Y-%m-%d %H:%M:%S')
+
+                            # Get current time (make timezone aware if needed)
+                            current_time = datetime.now()
+                            if signal_time.tzinfo is not None:
+                                from datetime import timezone
+                                current_time = current_time.replace(tzinfo=timezone.utc)
+
+                            time_diff = (current_time - signal_time).total_seconds()
+                            if time_diff < 300:  # 5 minutes
+                                is_running = True
+                                bot_pid = "docker"
+                                logger.info(f"RL bot detected as running in Docker (latest signal {int(time_diff)}s ago)")
+                            else:
+                                logger.warning(f"Latest signal is {int(time_diff)}s old - bot may be stopped")
+                        except Exception as e:
+                            logger.warning(f"Error parsing signal timestamp: {e}")
                 else:
-                    logger.warning("RL bot process not found in ps output")
+                    logger.warning("No recent signals found - bot may not have started yet")
+            else:
+                # Method 2: Native deployment - check PID file
+                pid_file = 'rl_bot.pid'
+                if os.path.exists(pid_file):
+                    try:
+                        with open(pid_file, 'r') as f:
+                            pid_content = f.read().strip()
+                            if pid_content:
+                                # Verify the process is actually running
+                                result = subprocess.run(['ps', '-p', pid_content], capture_output=True, text=True, timeout=5)
+                                if result.returncode == 0 and 'python' in result.stdout:
+                                    bot_pid = pid_content
+                                    is_running = True
+                                    logger.info(f"Found RL bot running with PID: {bot_pid} (from PID file)")
+                    except Exception as e:
+                        logger.warning(f"Error reading PID file: {e}")
+
+                # Method 3: Fallback to ps aux if PID file method failed
+                if not is_running:
+                    result = subprocess.run(['ps', 'aux'], capture_output=True, text=True, timeout=5)
+                    if 'rl_bot_ready.py' in result.stdout:
+                        is_running = True
+                        # Get PID if running
+                        for line in result.stdout.split('\n'):
+                            if 'rl_bot_ready.py' in line and 'grep' not in line:
+                                parts = line.split()
+                                if len(parts) >= 2:
+                                    bot_pid = parts[1]
+                                    logger.info(f"Found RL bot running with PID: {bot_pid} (from ps aux)")
+                                break
+                    else:
+                        logger.warning("RL bot process not found in ps output")
         except Exception as e:
             logger.error(f"Error checking RL bot status: {e}")
             is_running = False
@@ -1707,16 +1955,85 @@ def get_rl_bot_status():
         # Get latest RL decision from the database
         db = get_database()
         latest_rl_decision = db.get_recent_rl_signals(limit=1)
-        
+
+        # Extract market data from latest signal indicators
+        market_data = None
+        current_signal = None
+        if latest_rl_decision:
+            decision = latest_rl_decision[0]
+            indicators = decision.get('indicators', {})
+            if indicators:
+                market_data = {
+                    'symbol': decision.get('symbol', 'SUIUSDC'),
+                    'price': decision.get('price', 0),
+                    'rsi': indicators.get('rsi', 0),
+                    'vwap': indicators.get('vwap', 0),
+                    'timestamp': decision.get('timestamp', '')
+                }
+
+            # Extract current signal
+            signal_value = decision.get('signal', 0)
+            strength = decision.get('strength', 0)
+            action = 'BUY' if signal_value > 0 else 'SELL' if signal_value < 0 else 'HOLD'
+            current_signal = {
+                'action': action,
+                'strength': strength,
+                'timestamp': decision.get('timestamp', '')
+            }
+
+        # Get position info from database
+        position_info = None
+        try:
+            with db.get_connection() as conn:
+                cursor = conn.execute('''
+                    SELECT * FROM trades
+                    WHERE symbol = ? AND status = 'OPEN'
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                ''', ('SUIUSDC',))
+                position = cursor.fetchone()
+
+                if position:
+                    position_dict = dict(position)
+                    # Calculate current PnL if we have market data
+                    if market_data:
+                        current_price = market_data['price']
+                        entry_price = position_dict['entry_price']
+                        quantity = position_dict['quantity']
+                        side = position_dict['side']
+
+                        # Calculate PnL
+                        if side == 'BUY':
+                            pnl = (current_price - entry_price) * quantity
+                        else:  # SELL
+                            pnl = (entry_price - current_price) * quantity
+
+                        pnl_percentage = (pnl / (entry_price * quantity)) * 100
+
+                        position_info = {
+                            'side': 'LONG' if side == 'BUY' else 'SHORT',
+                            'size': quantity,
+                            'entry_price': entry_price,
+                            'current_price': current_price,
+                            'pnl': f"{pnl:+.2f}",
+                            'pnl_percentage': f"{pnl_percentage:+.2f}%",
+                            'timestamp': position_dict['timestamp']
+                        }
+                else:
+                    position_info = {'status': 'No position'}
+        except Exception as e:
+            logger.error(f"Error getting position info: {e}")
+            position_info = {'status': 'No position'}
+
         # Parse the latest RL bot log entries
         bot_status = {
             'running': is_running,
             'pid': bot_pid,
             'last_update': None,
-            'current_signal': None,
+            'current_signal': current_signal,
             'rl_decision': latest_rl_decision[0] if latest_rl_decision else None,
-            'position_info': None,
-            'market_data': None,
+            'position_info': position_info,
+            'market_data': market_data,
             'next_update': None
         }
         
@@ -1817,14 +2134,14 @@ def get_rl_bot_status():
 def get_chart_analysis():
     """API endpoint to get chart analysis data and recommendations"""
     try:
-        # Read the chart analysis JSON file
-        analysis_file = 'analysis_results_SUIUSDC.json'
+        # Read the chart analysis JSON file from shared directory
+        analysis_file = 'shared/analysis_results_SUIUSDC.json'
         if os.path.exists(analysis_file):
             with open(analysis_file, 'r') as f:
                 analysis_data = json.load(f)
-            
-            # Check if chart image exists
-            chart_file = 'chart_analysis_SUIUSDC.png'
+
+            # Check if chart image exists in shared directory
+            chart_file = 'shared/chart_analysis_SUIUSDC.png'
             chart_exists = os.path.exists(chart_file)
             
             return jsonify({
@@ -1852,7 +2169,7 @@ def get_chart_image():
     """API endpoint to serve the chart analysis image"""
     try:
         from flask import send_file
-        chart_file = 'chart_analysis_SUIUSDC.png'
+        chart_file = 'shared/chart_analysis_SUIUSDC.png'
         if os.path.exists(chart_file):
             return send_file(chart_file, mimetype='image/png')
         else:
@@ -2532,12 +2849,14 @@ def get_hyperdash_trader(trader_address):
 
 @app.route('/api/backtest/run', methods=['POST'])
 def run_backtest():
-    """API endpoint to run a backtest with custom configuration
+    """API endpoint to run a backtest with custom configuration (PIN protected)
 
     Executes a backtest using the unified signal aggregator historical data.
     Tests different weight combinations and trading parameters.
+    Requires 6-digit PIN authentication.
 
     Request Body:
+        pin: 6-digit PIN for authentication (required)
         symbol: Trading pair symbol (default: 'SUIUSDC')
         start_date: Start date YYYY-MM-DD (optional, defaults to available data)
         end_date: End date YYYY-MM-DD (optional, defaults to available data)
@@ -2558,15 +2877,33 @@ def run_backtest():
 
         data = request.get_json() or {}
 
+        # Get request data and PIN
+        provided_pin = data.get('pin', '').strip()
+
+        # Get client IP for rate limiting
+        client_ip = request.remote_addr or request.headers.get('X-Forwarded-For', 'unknown')
+
+        # Validate 6-digit PIN
+        pin_validation = validate_6_digit_pin(provided_pin, client_ip)
+        if not pin_validation['success']:
+            status_code = 429 if pin_validation['blocked'] else 401
+            return jsonify({
+                'success': False,
+                'message': pin_validation['message'],
+                'blocked': pin_validation['blocked']
+            }), status_code
+
+        logger.info(f"🔒 Quick backtest authorized from IP: {client_ip}")
+
         # Extract parameters
         symbol = data.get('symbol', 'SUIUSDC')
         days_back = data.get('days_back', 30)
         initial_balance = data.get('initial_balance', 10000.0)
 
-        # Use shared database with more historical data
-        db_path = 'shared/databases/trading_bot.db'
+        # Use current database with live data
+        db_path = 'data/trading_bot.db'
 
-        # Calculate date range from shared database
+        # Calculate date range from database
         conn = sqlite3.connect(db_path)
         cursor = conn.execute("SELECT MIN(timestamp) as start, MAX(timestamp) as end FROM signals WHERE symbol = ?", (symbol,))
         result = cursor.fetchone()
@@ -2590,9 +2927,9 @@ def run_backtest():
             stop_loss_pct=data.get('stop_loss_pct', 0.03),
             take_profit_pct=data.get('take_profit_pct', 0.06),
             weights=data.get('weights'),  # None will use defaults
-            buy_threshold=data.get('buy_threshold', 6.5),
-            sell_threshold=data.get('sell_threshold', 3.5),
-            min_confidence=data.get('min_confidence', 55.0)
+            buy_threshold=data.get('buy_threshold', 5.5),
+            sell_threshold=data.get('sell_threshold', 4.5),
+            min_confidence=data.get('min_confidence', 0.0)
         )
 
         # Run backtest with shared database
@@ -2684,7 +3021,7 @@ def run_backtest_optimization():
         initial_balance = data.get('initial_balance', 10000.0)
 
         # Use shared database
-        db_path = 'shared/databases/trading_bot.db'
+        db_path = 'data/trading_bot.db'
 
         # Calculate date range from shared database
         import sqlite3
@@ -2747,7 +3084,7 @@ def check_backtest_data():
         import sqlite3
 
         # Use shared database with historical data
-        db_path = 'shared/databases/trading_bot.db'
+        db_path = 'data/trading_bot.db'
         conn = sqlite3.connect(db_path)
 
         # Get signal statistics
@@ -2842,7 +3179,7 @@ def get_backtest_insights():
 
         # Run a quick backtest with current weights on shared database
         symbol = 'SUIUSDC'
-        db_path = 'shared/databases/trading_bot.db'
+        db_path = 'data/trading_bot.db'
 
         # Get actual date range from database
         import sqlite3

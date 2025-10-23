@@ -241,8 +241,8 @@ def create_mock_spike_trades(conn, detections):
             exit_timestamp = None
             exit_reason = None
 
-        stop_loss = round(entry_price * 0.97, 4)
-        take_profit = round(entry_price * 1.05, 4)
+        stop_loss = round(entry_price * 0.975, 4)
+        take_profit = round(entry_price * 1.06, 4)
 
         cursor.execute("""
             INSERT INTO spike_trades (

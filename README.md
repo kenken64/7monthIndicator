@@ -218,6 +218,120 @@ A sophisticated trading bot that uses multi-indicator strategy (MACD, VWAP, EMAs
    pip install ta-lib
    ```
 
+## Docker Installation (Recommended)
+
+For easier deployment and management, you can use Docker to run the entire trading system in containers.
+
+### Prerequisites
+- Docker (version 20.10+)
+- Docker Compose (version 2.0+)
+
+### Quick Start with Docker
+
+1. **Clone the repository:**
+   ```bash
+   git clone <your-repo-url>
+   cd 7monthIndicator
+   ```
+
+2. **Create your .env file:**
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Configure your API credentials in .env:**
+   Edit the `.env` file and add your:
+   - Binance API keys
+   - OpenAI API key
+   - NewsAPI key
+   - Bot control PIN
+
+4. **Start all services with Docker:**
+   ```bash
+   ./docker-restart.sh
+   ```
+
+   Or manually:
+   ```bash
+   docker-compose up -d --build
+   ```
+
+### Docker Services
+
+The docker-compose setup creates three containerized services mirroring the `scripts/restart_both.sh` script:
+
+1. **rl-bot**: RL Trading Bot (rl_bot_ready.py)
+2. **chart-bot**: Chart Analysis Bot (chart_analysis_bot.py)
+3. **web-dashboard**: Web Dashboard (web_dashboard.py)
+
+### Docker Management Commands
+
+```bash
+# Start all services
+./docker-restart.sh
+# or
+docker-compose up -d
+
+# Stop all services
+docker-compose down
+
+# View logs (all services)
+docker-compose logs -f
+
+# View logs (specific service)
+docker-compose logs -f rl-bot
+docker-compose logs -f chart-bot
+docker-compose logs -f web-dashboard
+
+# Check service status
+docker-compose ps
+
+# Restart a specific service
+docker-compose restart rl-bot
+
+# View resource usage
+docker stats
+```
+
+### Data Persistence
+
+The following directories and files are mounted as volumes for data persistence:
+- `./logs` - Application logs
+- `./data` - Trading data
+- `./shared` - Shared resources between services
+- `*.db` - SQLite database files
+- `*.pkl` - ML model files
+
+### Health Checks
+
+Each service includes health checks to ensure they're running properly:
+- **RL Bot**: Checks if process is running every 30s
+- **Chart Bot**: Checks if process is running every 30s
+- **Web Dashboard**: HTTP health check on port 5000 every 30s
+
+### Troubleshooting Docker
+
+**Service won't start:**
+```bash
+# Check logs for errors
+docker-compose logs <service-name>
+
+# Rebuild containers
+docker-compose up -d --build --force-recreate
+```
+
+**Permission issues:**
+```bash
+# Fix ownership of mounted volumes
+sudo chown -R $USER:$USER logs/ data/ shared/
+```
+
+**Out of disk space:**
+```bash
+# Clean up unused Docker resources
+docker system prune -a
+```
+
 ## Configuration
 
 1. **Create your .env file:**
@@ -282,18 +396,46 @@ python3 configure_costs.py premium
 python3 configure_costs.py status
 ```
 
+#### **OpenAI API Pricing (2025)**
+
+**Input Costs:**
+- **GPT-4o**: $2.50 per 1M tokens
+- **GPT-4o-mini**: $0.150 per 1M tokens (17x cheaper than GPT-4o)
+
+**Output Costs:**
+- **GPT-4o**: $10.00 per 1M tokens
+- **GPT-4o-mini**: $0.600 per 1M tokens (17x cheaper than GPT-4o)
+
+**Typical Usage per Month:**
+- **Chart Analysis**: ~50K input tokens, ~10K output tokens per day
+- **News Sentiment**: ~30K input tokens, ~5K output tokens per day (with caching)
+- **Total Monthly**: ~2.4M input tokens, ~450K output tokens
+
 #### **Monthly Cost Comparison**
-| Mode | Sentiment Analysis | Monthly Cost | Features |
-|------|-------------------|--------------|----------|
-| **Old GPT-4** | GPT-4 | $15-30/month | High-quality sentiment |
-| **Premium** | GPT-4o-mini | $1-3/month | Good sentiment, 60x cheaper |
-| **Cost-Saving** | Local keywords | $0/month | Basic sentiment, FREE |
+| Mode | Sentiment Analysis | Chart Analysis | Monthly Cost | Est. Tokens |
+|------|-------------------|----------------|--------------|-------------|
+| **GPT-4o** | GPT-4o | GPT-4o | $10-15/month | 2.4M in + 450K out |
+| **Premium (Mixed)** | GPT-4o-mini | GPT-4o | $5-8/month | Sentiment: GPT-4o-mini, Charts: GPT-4o |
+| **Cost-Saving** | Local keywords | GPT-4o | $3-5/month | Chart analysis only |
+| **Ultra-Saving** | Local keywords | Disabled | $0/month | No AI calls |
+
+**Cost Breakdown (Premium Mode):**
+- Chart Analysis (GPT-4o): ~$3.75/month (1.5M in + 300K out)
+- News Sentiment (GPT-4o-mini): ~$0.40/month (900K in + 150K out)
+- **Total**: ~$4.15/month with aggressive caching
+
+**Savings Tips:**
+- Enable local sentiment analysis: Save ~$0.40-1.00/month
+- Increase cache duration: Reduce API calls by 50-80%
+- Disable chart analysis during low-activity periods
+- Use testnet mode for development (no real trading)
 
 ### **Additional Cost Optimizations**
 - **CoinGecko API**: FREE (rate limited)
 - **Fear & Greed Index**: FREE
-- **NewsAPI**: FREE tier available
+- **NewsAPI**: FREE tier available (1000 requests/day)
 - **Cross-asset data**: FREE from public APIs
+- **Binance API**: FREE (rate limited)
 
 ## Bot Configuration
 

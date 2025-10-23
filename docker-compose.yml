@@ -1,0 +1,175 @@
+services:
+  # RL Trading Bot Service
+  rl-bot:
+    build: .
+    container_name: rl-trading-bot
+    command: python3 rl_bot_ready.py
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./trading_bot.db:/app/trading_bot.db
+      - ./trading_data.db:/app/trading_data.db
+      - ./rl_trading_model.pkl:/app/rl_trading_model.pkl
+      - ./shared:/app/shared
+      - ./trading_bot.log:/app/trading_bot.log
+      - ./news_sentiment.json:/app/news_sentiment.json
+    environment:
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    secrets:
+      - binance_api_key
+      - binance_secret_key
+      - openai_api_key
+      - telegram_bot_token
+      - telegram_chat_id
+      - bot_control_pin
+      - news_api_key
+    restart: unless-stopped
+    networks:
+      - trading-network
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "rl_bot_ready.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Chart Analysis Bot Service
+  chart-bot:
+    build: .
+    container_name: chart-analysis-bot
+    command: python3 chart_analysis_bot.py
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./trading_bot.db:/app/trading_bot.db
+      - ./trading_data.db:/app/trading_data.db
+      - ./shared:/app/shared
+      - ./chart_analysis.log:/app/chart_analysis.log
+      - .:/app/charts
+    environment:
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    secrets:
+      - binance_api_key
+      - binance_secret_key
+      - openai_api_key
+      - telegram_bot_token
+      - telegram_chat_id
+      - bot_control_pin
+      - news_api_key
+    restart: unless-stopped
+    networks:
+      - trading-network
+    depends_on:
+      - rl-bot
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "chart_analysis_bot.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # CrewAI AI Agent Bot Service
+  crewai-bot:
+    build: .
+    container_name: crewai-agent-bot
+    command: python3 rl_bot_with_crewai.py
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./trading_bot.db:/app/trading_bot.db
+      - ./trading_data.db:/app/trading_data.db
+      - ./shared:/app/shared
+      - ./config:/app/config
+    environment:
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    secrets:
+      - binance_api_key
+      - binance_secret_key
+      - openai_api_key
+      - telegram_bot_token
+      - telegram_chat_id
+      - bot_control_pin
+      - news_api_key
+    restart: unless-stopped
+    networks:
+      - trading-network
+    depends_on:
+      - rl-bot
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "rl_bot_with_crewai.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Web Dashboard Service
+  web-dashboard:
+    build: .
+    container_name: web-dashboard
+    command: python3 web_dashboard.py
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./trading_bot.db:/app/trading_bot.db
+      - ./trading_data.db:/app/trading_data.db
+      - ./shared:/app/shared
+      - ./templates:/app/templates
+      - ./static:/app/static
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./trading_bot.log:/app/trading_bot.log
+      - ./chart_analysis.log:/app/chart_analysis.log
+      - ./news_sentiment.json:/app/news_sentiment.json
+    environment:
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    secrets:
+      - binance_api_key
+      - binance_secret_key
+      - openai_api_key
+      - telegram_bot_token
+      - telegram_chat_id
+      - bot_control_pin
+      - news_api_key
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+    networks:
+      - trading-network
+    depends_on:
+      - rl-bot
+      - chart-bot
+      - crewai-bot
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# Define secrets from files
+secrets:
+  binance_api_key:
+    file: ./secrets/binance_api_key
+  binance_secret_key:
+    file: ./secrets/binance_secret_key
+  openai_api_key:
+    file: ./secrets/openai_api_key
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token
+  telegram_chat_id:
+    file: ./secrets/telegram_chat_id
+  bot_control_pin:
+    file: ./secrets/bot_control_pin
+  news_api_key:
+    file: ./secrets/news_api_key
+
+networks:
+  trading-network:
+    driver: bridge
+
+volumes:
+  logs:
+  data:

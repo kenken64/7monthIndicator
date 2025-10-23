@@ -96,7 +96,9 @@ class LocalSentimentAnalyzer:
         
         # Calculate confidence (0-10 scale)
         total_sentiment_score = bullish_score + bearish_score
-        confidence = min(10, int(total_sentiment_score * 2))
+        # Improved confidence calculation: scale by 3 instead of 2 for better sensitivity
+        # Add minimum confidence of 3 if we have any sentiment
+        confidence = min(10, max(int(total_sentiment_score * 3), 3 if total_sentiment_score > 0.1 else 0))
         
         # Generate explanation
         explanation = self._generate_explanation(

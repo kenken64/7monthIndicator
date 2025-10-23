@@ -1,0 +1,43 @@
+name: Test Status Badge
+
+on:
+  workflow_run:
+    workflows: ["Quick Tests", "Full Test Suite"]
+    types:
+      - completed
+
+jobs:
+  update-badge:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.workflow_run.head_branch }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create badge directory
+      run: mkdir -p .github/badges
+
+    - name: Generate test status badge
+      run: |
+        if [ "${{ github.event.workflow_run.conclusion }}" == "success" ]; then
+          STATUS="passing"
+          COLOR="brightgreen"
+        else
+          STATUS="failing"
+          COLOR="red"
+        fi
+
+        # Create badge JSON
+        cat > .github/badges/tests.json << EOF
+        {
+          "schemaVersion": 1,
+          "label": "tests",
+          "message": "$STATUS",
+          "color": "$COLOR"
+        }
+        EOF
+
+        echo "Test status: $STATUS" >> $GITHUB_STEP_SUMMARY

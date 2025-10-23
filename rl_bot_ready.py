@@ -4,6 +4,12 @@ RL-Enhanced Trading Bot - Ready to Run
 Direct copy of original bot with RL integration
 """
 
+# Initialize Docker secrets before any other imports
+try:
+    import init_secrets  # This loads Docker secrets into environment variables
+except ImportError:
+    pass  # Running in development mode without Docker secrets
+
 import os
 import time
 import pandas as pd
@@ -149,12 +155,20 @@ class TelegramNotifier:
                 pnl_emoji = "🟢" if position_info.get('unrealized_pnl', 0) > 0 else "🔴"
                 pos_status = f"\n📍 Current Position: {position_info['side']} {position_info.get('size', 0):.1f}"
                 pos_status += f"\n💰 PnL: {pnl_emoji} ${position_info.get('unrealized_pnl', 0):.2f}"
-            
+
+            # Determine strength display based on unified signal availability
+            if signal_data.get('unified_details'):
+                # Use unified 0-10 scale
+                strength_display = f"{signal_data['unified_details']['strength']:.1f}/10"
+            else:
+                # Use legacy 0-5 scale
+                strength_display = f"{signal_data.get('strength', 0)}/5"
+
             # Create message
             message = f"""<b>🚀 SUI/USDC RL Trading Signal</b>
-            
+
 {signal_emoji} <b>Signal: {signal_name}</b>
-💪 Strength: {signal_data.get('strength', 0)}/5
+💪 Strength: {strength_display}
 💹 Price: ${current_price:.4f}
 {rl_status}
 {pos_status}
@@ -303,8 +317,8 @@ class RLEnhancedBinanceFuturesBot:
         self.symbol = symbol
         self.leverage = leverage
         self.position_percentage = position_percentage  # 2% instead of 51%!
-        self.take_profit_percent = 15.0  # 15% profit target
-        self.stop_loss_percent = 5.0    # 5% loss limit
+        self.take_profit_percent = 6.0  # 6% profit target
+        self.stop_loss_percent = 2.5    # 2.5% loss limit
         
         # State tracking - Monitor current positions and entry points
         self.position_side = None  # LONG, SHORT, or None
@@ -329,7 +343,8 @@ class RLEnhancedBinanceFuturesBot:
         # Unified Signal Aggregator - Combines all signal sources
         self.unified_aggregator = None
         self.signal_collector = None
-        if UNIFIED_SIGNALS_ENABLED:
+        self.unified_signals_enabled = UNIFIED_SIGNALS_ENABLED
+        if self.unified_signals_enabled:
             try:
                 self.unified_aggregator = create_aggregator()
                 self.signal_collector = SignalDataCollector()
@@ -337,7 +352,7 @@ class RLEnhancedBinanceFuturesBot:
                 logger.info("📊 Unified Signal Aggregator initialized and data collection started")
             except Exception as e:
                 logger.error(f"❌ Failed to initialize Unified Signal Aggregator: {e}")
-                UNIFIED_SIGNALS_ENABLED = False
+                self.unified_signals_enabled = False
 
         logger.info(f"🤖 RL-Enhanced Bot initialized for {symbol}")
         logger.info(f"🛡️ SAFETY SETTINGS: {position_percentage}% position size (vs 51% original)")
@@ -354,7 +369,7 @@ class RLEnhancedBinanceFuturesBot:
             logger.error(f"⚠️ Startup reconciliation failed: {e}")
         
         # Send startup notification to Telegram
-        unified_status = "ACTIVE" if (UNIFIED_SIGNALS_ENABLED and self.unified_aggregator) else "DISABLED"
+        unified_status = "ACTIVE" if (self.unified_signals_enabled and self.unified_aggregator) else "DISABLED"
         startup_message = f"""<b>🤖 RL Trading Bot Started</b>
 
 📊 Symbol: {symbol}
@@ -511,7 +526,7 @@ Signal Sources:
                 logger.error(f"❌ RL Enhancement failed: {e}")
 
         # Use Unified Signal Aggregator if available
-        if UNIFIED_SIGNALS_ENABLED and self.unified_aggregator:
+        if self.unified_signals_enabled and self.unified_aggregator:
             try:
                 # Convert traditional signal to format for aggregator
                 tech_action = 'BUY' if original_signal_data['signal'] > 0 else 'SELL' if original_signal_data['signal'] < 0 else 'HOLD'
@@ -866,25 +881,28 @@ Signal Sources:
 
     def set_tp_sl(self, side: str, entry_price: float, quantity: float):
         """Set Take Profit and Stop Loss orders
-        
-        Creates conditional orders to automatically close positions:
-        - Take Profit: 15% profit target
-        - Stop Loss: 5% maximum loss limit
-        
+
+        Creates conditional orders to automatically close positions using
+        the current TP/SL percentages from instance variables.
+
         Args:
             side: Original trade direction ('BUY' or 'SELL')
             entry_price: Price at which position was entered
             quantity: Position size for the orders
         """
         try:
+            # Calculate TP/SL multipliers from percentages
+            tp_multiplier = 1 + (self.take_profit_percent / 100)
+            sl_multiplier = 1 - (self.stop_loss_percent / 100)
+
             if side == 'BUY':
-                tp_price = round(entry_price * 1.15, 4)  # 15% profit (85% -> 115%)
-                sl_price = round(entry_price * 0.95, 4)  # 5% loss (95%)
+                tp_price = round(entry_price * tp_multiplier, 4)
+                sl_price = round(entry_price * sl_multiplier, 4)
                 tp_side = 'SELL'
                 sl_side = 'SELL'
             else: # SELL
-                tp_price = round(entry_price * 0.85, 4)  # 15% profit (85%)
-                sl_price = round(entry_price * 1.05, 4)  # 5% loss (105%)
+                tp_price = round(entry_price / tp_multiplier, 4)
+                sl_price = round(entry_price / sl_multiplier, 4)
                 tp_side = 'BUY'
                 sl_side = 'BUY'
 
@@ -912,7 +930,100 @@ Signal Sources:
             logger.error(f"❌ Error setting TP/SL: {e}")
         except Exception as e:
             logger.error(f"❌ Unexpected error setting TP/SL: {e}")
-    
+
+    def update_tp_sl_for_position(self, position_info: Dict) -> bool:
+        """Update TP/SL orders for existing position based on current config
+
+        IMPORTANT: This function ONLY modifies the TP/SL orders.
+        It does NOT close the position - the position remains open.
+        We only cancel and replace the conditional TP/SL trigger orders.
+
+        This function allows dynamic adjustment of TP/SL orders when
+        configuration values change. Only works for bot-managed positions.
+
+        Args:
+            position_info: Current position information from get_position_info()
+
+        Returns:
+            bool: True if TP/SL updated successfully, False otherwise
+        """
+        try:
+            # Check if we have a position
+            if not position_info.get('side'):
+                logger.info("📊 No open position to update TP/SL")
+                return False
+
+            # Only update TP/SL for positions opened by this bot
+            if not self.can_close_position():
+                logger.info("🚫 Cannot update TP/SL - position not opened by this bot")
+                return False
+
+            side = position_info['side']
+            entry_price = position_info['entry_price']
+            size = position_info['size']
+
+            logger.info(f"🔍 Checking TP/SL for {side} position of {size} @ ${entry_price:.4f}")
+
+            # Get current TP/SL from open orders
+            current_tp, current_sl = self.get_tp_sl_prices()
+
+            # Calculate what TP/SL should be based on current config
+            tp_multiplier = 1 + (self.take_profit_percent / 100)
+            sl_multiplier = 1 - (self.stop_loss_percent / 100)
+
+            if side == 'LONG':
+                expected_tp = round(entry_price * tp_multiplier, 4)
+                expected_sl = round(entry_price * sl_multiplier, 4)
+            else:  # SHORT
+                expected_tp = round(entry_price / tp_multiplier, 4)
+                expected_sl = round(entry_price / sl_multiplier, 4)
+
+            # Check if update is needed
+            needs_update = False
+            if current_tp and abs(current_tp - expected_tp) > 0.0001:
+                needs_update = True
+                logger.info(f"🔄 TP needs update: ${current_tp:.4f} → ${expected_tp:.4f}")
+            if current_sl and abs(current_sl - expected_sl) > 0.0001:
+                needs_update = True
+                logger.info(f"🔄 SL needs update: ${current_sl:.4f} → ${expected_sl:.4f}")
+
+            if not needs_update:
+                logger.info(f"✅ TP/SL already up to date (TP: {self.take_profit_percent}%, SL: {self.stop_loss_percent}%)")
+                return False
+
+            logger.info("⚠️ IMPORTANT: Position will remain OPEN - only updating TP/SL orders")
+
+            # Get list of current open orders to cancel only TP/SL orders
+            open_orders = self.client.futures_get_open_orders(symbol=self.symbol)
+            tpsl_orders = [o for o in open_orders if o['type'] in ['TAKE_PROFIT_MARKET', 'STOP_MARKET']]
+
+            if tpsl_orders:
+                logger.info(f"🗑️ Cancelling {len(tpsl_orders)} existing TP/SL orders (position stays open)...")
+                for order in tpsl_orders:
+                    try:
+                        self.client.futures_cancel_order(symbol=self.symbol, orderId=order['orderId'])
+                        logger.info(f"   ✓ Cancelled {order['type']} order")
+                    except Exception as e:
+                        logger.warning(f"   ⚠️ Could not cancel order {order['orderId']}: {e}")
+                logger.info("✅ Old TP/SL orders cancelled (position still open)")
+            else:
+                logger.info("ℹ️ No existing TP/SL orders to cancel")
+
+            # Set new TP/SL orders
+            logger.info(f"🎯 Setting new TP/SL orders (TP: {self.take_profit_percent}%, SL: {self.stop_loss_percent}%)")
+            logger.info(f"   New TP: ${expected_tp:.4f} | New SL: ${expected_sl:.4f}")
+            self.set_tp_sl('BUY' if side == 'LONG' else 'SELL', entry_price, size)
+
+            logger.info(f"✅ TP/SL orders updated successfully - {side} position remains open")
+            return True
+
+        except BinanceAPIException as e:
+            logger.error(f"❌ Error updating TP/SL: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"❌ Unexpected error updating TP/SL: {e}")
+            return False
+
     def can_close_position(self) -> bool:
         """Check if the bot can close the current position (only if it was opened by this bot)"""
         if not self.position_order_id:
@@ -1005,57 +1116,142 @@ Signal Sources:
             logger.error(f"Error getting position info: {e}")
             return {'symbol': self.symbol, 'side': None, 'size': 0}
     
+    def sync_binance_trades(self):
+        """Sync trades from Binance API to database to catch missing trades
+
+        Fetches recent trades from Binance and compares with database records.
+        Only syncs meaningful trades (reduce-only trades that close positions).
+        This ensures all actual trades are tracked without duplicate partial fills.
+        """
+        try:
+            logger.info("🔄 Syncing trades from Binance...")
+
+            # Get recent trades from Binance (last 7 days)
+            binance_trades = self.client.futures_account_trades(symbol=self.symbol, limit=500)
+
+            # Get existing order IDs from database
+            with self.db.get_connection() as conn:
+                cursor = conn.execute('SELECT order_id FROM trades WHERE symbol = ? AND order_id IS NOT NULL', (self.symbol,))
+                existing_order_ids = {row['order_id'] for row in cursor.fetchall()}
+
+            new_trades_count = 0
+            for binance_trade in binance_trades:
+                order_id = str(binance_trade['orderId'])
+
+                # Skip if already in database
+                if order_id in existing_order_ids:
+                    continue
+
+                # Calculate realized PnL if available
+                realized_pnl = float(binance_trade.get('realizedPnl', 0))
+
+                # FILTER: Only sync reduce-only trades (position closes with PnL)
+                # This prevents storing every partial fill when opening a position
+                # A single position can have 4-5 fills which would show as duplicate trades
+                if abs(realized_pnl) < 0.01:  # Skip position-opening fills (no PnL)
+                    continue
+
+                # Record the missing trade
+                side = binance_trade['side']  # BUY or SELL
+                quantity = float(binance_trade['qty'])
+                price = float(binance_trade['price'])
+                timestamp = datetime.fromtimestamp(binance_trade['time'] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+                # Store in database
+                with self.db.get_connection() as conn:
+                    conn.execute('''
+                        INSERT INTO trades (
+                            timestamp, symbol, side, quantity, entry_price,
+                            exit_price, pnl, status, order_id, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        timestamp,
+                        self.symbol,
+                        side,
+                        quantity,
+                        price,
+                        price,  # Set exit price for closes
+                        realized_pnl,
+                        'CLOSED',
+                        order_id,
+                        timestamp,
+                        timestamp
+                    ))
+
+                new_trades_count += 1
+                logger.info(f"📝 Synced position close: {side} {quantity} @ ${price:.4f} | PnL: ${realized_pnl:.2f} (Order: {order_id})")
+
+            if new_trades_count > 0:
+                logger.info(f"✅ Synced {new_trades_count} position closes from Binance")
+            else:
+                logger.info("✅ All Binance trades already in database")
+
+        except Exception as e:
+            logger.error(f"❌ Error syncing Binance trades: {e}")
+
     def reconcile_positions(self):
         """Reconcile database positions with actual Binance positions
-        
+
         Ensures database records match actual exchange positions by:
+        - Syncing missing trades from Binance API
         - Comparing live Binance positions with database open trades
         - Detecting externally closed positions
         - Updating database records to reflect actual state
         - Clearing position tracking for externally managed trades
-        
+
         This prevents discrepancies between bot's internal state and reality.
         """
         try:
+            # First, sync any missing trades from Binance
+            self.sync_binance_trades()
+
             # Get live positions from Binance
             positions = self.client.futures_position_information(symbol=self.symbol)
             live_position_amt = 0
-            
+            position_data = None
+
             for pos in positions:
                 if pos['symbol'] == self.symbol:
                     live_position_amt = float(pos['positionAmt'])
+                    position_data = pos  # Save position data for later use
                     break
-            
+
             # Get open trades from database
             open_trades = self.db.get_open_trades(self.symbol)
             db_position_amt = 0
-            
+
             for trade in open_trades:
                 if trade['side'] == 'BUY':
                     db_position_amt += trade['quantity']
                 else:  # SELL
                     db_position_amt -= trade['quantity']
-            
+
             # Check if positions match
             if abs(live_position_amt) < 0.001 and len(open_trades) > 0:
                 # Position closed on Binance but still open in database
                 logger.info(f"🔄 Reconciling: Position closed on Binance but {len(open_trades)} open trades in database")
-                
+
                 # Get current price
                 ticker = self.client.get_symbol_ticker(symbol=self.symbol)
                 current_price = float(ticker['price'])
-                
+
                 # Close all open trades in database
                 self.update_open_trades_on_close(current_price)
-                
+
                 # Clear position tracking since position was closed externally
                 self.clear_position_tracking()
-                
+
                 logger.info(f"✅ Reconciled {len(open_trades)} trades - marked as closed with current price ${current_price:.4f}")
-                
+
+            elif abs(live_position_amt) > 0.001 and len(open_trades) == 0:
+                # Position exists on Binance but not in database - sync it
+                logger.info(f"🔄 Reconciling: Found open position on Binance ({live_position_amt} units) but no open trades in database")
+                if position_data:
+                    self.sync_open_position_from_binance(live_position_amt, position_data)
+
             elif abs(abs(live_position_amt) - abs(db_position_amt)) > 0.001:
                 logger.warning(f"⚠️ Position mismatch: Binance={live_position_amt}, Database={db_position_amt}")
-                
+
         except Exception as e:
             logger.error(f"❌ Error reconciling positions: {e}")
     
@@ -1087,7 +1283,79 @@ Signal Sources:
                 
         except Exception as e:
             logger.error(f"❌ Error updating open trades on close: {e}")
-    
+
+    def sync_open_position_from_binance(self, live_position_amt: float, position_data: Dict):
+        """Sync open position from Binance to database when missing
+
+        When Binance shows an open position but the database has no corresponding open trades,
+        this function fetches the recent fills for that position and creates database records.
+
+        Args:
+            live_position_amt: Position size from Binance (positive for LONG, negative for SHORT)
+            position_data: Position information dict from Binance API
+        """
+        try:
+            # Get recent fills from Binance to reconstruct the position
+            recent_fills = self.client.futures_account_trades(symbol=self.symbol, limit=100)
+
+            # Get entry price and other details from position data
+            entry_price = float(position_data.get('entryPrice', 0))
+
+            # Determine side based on position amount
+            side = 'BUY' if live_position_amt > 0 else 'SELL'
+            position_size = abs(live_position_amt)
+
+            # Find fills that make up this open position (realizedPnl = 0)
+            position_fills = []
+            total_qty = 0
+
+            for fill in reversed(recent_fills):  # Process newest first
+                if float(fill.get('realizedPnl', 0)) == 0:  # Open position fills have no realized PnL
+                    fill_qty = float(fill['qty'])
+                    fill_side = fill['side']
+
+                    # Only include fills matching the current position side
+                    if fill_side == side:
+                        position_fills.append(fill)
+                        total_qty += fill_qty
+
+                        # Stop when we've accounted for the full position
+                        if abs(total_qty - position_size) < 0.1:
+                            break
+
+            if not position_fills:
+                logger.warning(f"⚠️  No fills found to reconstruct open position")
+                return
+
+            # Get the most recent fill's order ID to use as the primary order ID
+            primary_order_id = str(position_fills[0]['orderId'])
+
+            # Create a single aggregated trade record in the database
+            timestamp = datetime.fromtimestamp(position_fills[0]['time'] / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+            with self.db.get_connection() as conn:
+                conn.execute('''
+                    INSERT INTO trades (
+                        timestamp, symbol, side, quantity, entry_price,
+                        status, order_id, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    timestamp,
+                    self.symbol,
+                    side,
+                    position_size,
+                    entry_price,
+                    'OPEN',
+                    primary_order_id,
+                    timestamp,
+                    timestamp
+                ))
+
+            logger.info(f"✅ Synced open position from Binance: {side} {position_size} @ ${entry_price:.4f} (Order: {primary_order_id})")
+
+        except Exception as e:
+            logger.error(f"❌ Error syncing open position from Binance: {e}")
+
     def close_position_on_hold_signal(self, position_info: Dict, current_price: float):
         """Close current position when HOLD signal is detected - only close if PnL is negative and bot opened the position"""
         try:
@@ -1247,7 +1515,33 @@ Signal Sources:
                 
                 # Get position info
                 position_info = self.get_position_info()
-                
+
+                # Check for config changes and update TP/SL if needed
+                try:
+                    from config import RISK_CONFIG
+                    config_tp = RISK_CONFIG.get('take_profit_percentage', self.take_profit_percent)
+                    config_sl = RISK_CONFIG.get('stop_loss_percentage', self.stop_loss_percent)
+
+                    # Check if TP/SL config changed
+                    if config_tp != self.take_profit_percent or config_sl != self.stop_loss_percent:
+                        logger.info(f"📝 Config change detected:")
+                        logger.info(f"   TP: {self.take_profit_percent}% → {config_tp}%")
+                        logger.info(f"   SL: {self.stop_loss_percent}% → {config_sl}%")
+
+                        # Update instance variables
+                        self.take_profit_percent = config_tp
+                        self.stop_loss_percent = config_sl
+
+                        # Update TP/SL for existing position if any
+                        if position_info.get('side'):
+                            logger.info(f"🔄 Updating TP/SL for existing {position_info['side']} position...")
+                            self.update_tp_sl_for_position(position_info)
+                            # Refresh position info after update
+                            position_info = self.get_position_info()
+
+                except Exception as e:
+                    logger.error(f"⚠️ Error checking config changes: {e}")
+
                 # Fetch market data
                 df = self.get_klines()
                 if df.empty:
@@ -1337,21 +1631,45 @@ Signal Sources:
                     else:
                         logger.info("🚫 RL exit signal detected but cannot close position - not opened by this bot")
                 
-                # Check for HOLD signal to close existing positions
+                # DISABLED: Signal-based position closures
+                # These functions were bypassing TP/SL risk management by closing positions
+                # prematurely when signals changed. Positions should ONLY be closed by:
+                # 1. Take Profit orders reaching 15% target
+                # 2. Stop Loss orders hitting 5% limit
+                # 3. Manual intervention
+                # 4. RL-based exit signals (which use more sophisticated criteria)
+
+                # Signal changes are informational only - they do NOT justify closing positions
+                # that have properly set TP/SL orders. Premature signal-based closures lead to:
+                # - Missing profit targets
+                # - Taking losses before SL is hit
+                # - Excessive trading frequency
+                # - Reduced overall profitability
+
+                # COMMENTED OUT: Check for HOLD signal to close existing positions
+                # if signal_data['signal'] == 0 and position_info['side']:
+                #     logger.info(f"🛑 HOLD signal detected with open {position_info['side']} position")
+                #     self.close_position_on_hold_signal(position_info, current_price)
+
+                # COMMENTED OUT: Check for opposite signal to close existing positions with negative PnL
+                # elif signal_data['signal'] != 0 and position_info['side']:
+                #     position_closed = self.close_position_on_opposite_signal(position_info, signal_data['signal'], current_price)
+                #
+                #     # If position was closed, we can now execute a new trade
+                #     if position_closed and signal_data['strength'] > 0:
+                #         logger.info(f"📈 Executing new trade after closing opposite position based on {signal_name} signal...")
+                #         self.execute_trade(signal_data, current_price)
+                #     elif not position_closed:
+                #         logger.info(f"✅ {signal_name} signal detected but keeping {position_info['side']} position (positive PnL). No new trade will be executed.")
+
+                # Log signal changes for informational purposes without closing positions
                 if signal_data['signal'] == 0 and position_info['side']:
-                    logger.info(f"🛑 HOLD signal detected with open {position_info['side']} position")
-                    self.close_position_on_hold_signal(position_info, current_price)
-                
-                # Check for opposite signal to close existing positions with negative PnL
+                    logger.info(f"ℹ️ HOLD signal detected with open {position_info['side']} position - keeping position open, respecting TP/SL orders")
                 elif signal_data['signal'] != 0 and position_info['side']:
-                    position_closed = self.close_position_on_opposite_signal(position_info, signal_data['signal'], current_price)
-                    
-                    # If position was closed, we can now execute a new trade
-                    if position_closed and signal_data['strength'] > 0:
-                        logger.info(f"📈 Executing new trade after closing opposite position based on {signal_name} signal...")
-                        self.execute_trade(signal_data, current_price)
-                    elif not position_closed:
-                        logger.info(f"✅ {signal_name} signal detected but keeping {position_info['side']} position (positive PnL). No new trade will be executed.")
+                    signal_name = "BUY" if signal_data['signal'] > 0 else "SELL"
+                    if (position_info['side'] == 'LONG' and signal_data['signal'] < 0) or \
+                       (position_info['side'] == 'SHORT' and signal_data['signal'] > 0):
+                        logger.info(f"ℹ️ Opposite {signal_name} signal detected with open {position_info['side']} position - keeping position open, respecting TP/SL orders")
                 
                 # Execute trades based on signals (no current position)
                 elif signal_data['signal'] != 0 and signal_data['strength'] > 0:

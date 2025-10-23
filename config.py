@@ -73,9 +73,9 @@ RISK_CONFIG = {
     
     # Stop Loss Settings (recommended for risk management)
     'use_stop_loss': True,         # Enable stop loss orders (RECOMMENDED)
-    'stop_loss_percentage': 10.0,  # Stop loss % from entry price (10% for balanced risk)
+    'stop_loss_percentage': 2.5,   # Stop loss % from entry price
     'use_take_profit': True,       # Enable take profit orders
-    'take_profit_percentage': 10.0, # Take profit % from entry price (1:1 risk/reward)
+    'take_profit_percentage': 6.0, # Take profit % from entry price
     
     # Advanced Stop Loss Settings
     'trailing_stop_loss': False,   # Enable trailing stop loss
@@ -105,9 +105,17 @@ NOTIFICATION_CONFIG = {
 from dotenv import load_dotenv
 load_dotenv('.env')
 
-NEWS_CONFIG = {
-    'api_key': os.getenv('NEWS_API_KEY') or 'ecc8081a11e24c1490722c9da1564fe5',
-}
+# Import secrets helper for secure credential management
+try:
+    from secrets_helper import get_news_api_key
+    NEWS_CONFIG = {
+        'api_key': get_news_api_key(),
+    }
+except (ImportError, ValueError):
+    # Fallback to environment variable for development
+    NEWS_CONFIG = {
+        'api_key': os.getenv('NEWS_API_KEY') or 'ecc8081a11e24c1490722c9da1564fe5',
+    }
 
 
 # Advanced Settings
