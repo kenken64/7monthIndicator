@@ -1,6 +1,10 @@
 // Trading Bot Dashboard JavaScript
 let pnlChart, signalChart, projectionChart;
-let currentSymbol = 'SUIUSDC';
+// currentSymbol is set by the template based on TRADING_SYMBOL env variable
+// Default fallback if not set by template
+if (typeof currentSymbol === 'undefined') {
+    let currentSymbol = 'SUIUSDC';
+}
 let currentDays = 30;
 let currentNewsPage = 1;
 let newsPerPage = 10;

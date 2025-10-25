@@ -13,6 +13,7 @@ crewai-tools>=0.76.0
 langchain>=0.3.27
 langchain-openai>=0.3.35
 langchain-community>=0.3.31
+langchain-core>=0.3.0
 pyyaml>=6.0.0
 
 # Testing dependencies

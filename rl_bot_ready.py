@@ -77,9 +77,14 @@ class TelegramNotifier:
         self.bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
         self.chat_id = os.getenv('TELEGRAM_CHAT_ID', '@bnbfutura_bot')
         self.enabled = bool(self.bot_token and self.bot_token.strip())
-        
+
+        # Rate limiting to prevent flooding
+        self.cooldown_minutes = int(os.getenv('TELEGRAM_COOLDOWN_MINUTES', '5'))
+        self.last_notification_time = None
+
         if self.enabled:
             logger.info(f"📱 Telegram notifications enabled for {self.chat_id}")
+            logger.info(f"📱 Telegram cooldown: {self.cooldown_minutes} minutes between notifications")
         else:
             logger.warning("📱 Telegram notifications disabled - no bot token provided")
     
@@ -123,23 +128,42 @@ class TelegramNotifier:
             logger.error(f"📱 Failed to send Telegram message: {e}")
             return False
     
+    def can_send_notification(self) -> bool:
+        """Check if enough time has passed since last notification
+
+        Returns:
+            bool: True if cooldown period has elapsed, False otherwise
+        """
+        if self.last_notification_time is None:
+            return True
+
+        time_since_last = (datetime.now() - self.last_notification_time).total_seconds() / 60
+        return time_since_last >= self.cooldown_minutes
+
     def send_signal_notification(self, signal_data: Dict, current_price: float, position_info: Dict = None) -> bool:
-        """Send RL signal notification to Telegram
-        
+        """Send RL signal notification to Telegram with rate limiting
+
         Creates a formatted trading signal message with current market data,
         RL enhancement status, position information, and analysis reasons.
-        
+        Rate limiting prevents flooding by enforcing a cooldown period.
+
         Args:
             signal_data: Dictionary containing signal strength, direction, and analysis
             current_price: Current market price of the trading pair
             position_info: Optional current position details for context
-            
+
         Returns:
             bool: True if notification sent successfully, False otherwise
         """
         if not self.enabled:
             return False
-        
+
+        # Check cooldown period
+        if not self.can_send_notification():
+            time_remaining = self.cooldown_minutes - ((datetime.now() - self.last_notification_time).total_seconds() / 60)
+            logger.debug(f"📱 Telegram notification skipped (cooldown: {time_remaining:.1f} min remaining)")
+            return False
+
         try:
             # Signal emoji and name
             signal = signal_data.get('signal', 0)
@@ -179,11 +203,16 @@ class TelegramNotifier:
             reasons = signal_data.get('reasons', [])[:3]  # Top 3 reasons
             for reason in reasons:
                 message += f"\n• {reason}"
-            
+
             message += f"\n\n⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} UTC"
-            
-            return self.send_message(message)
-            
+
+            # Send message and update last notification time if successful
+            success = self.send_message(message)
+            if success:
+                self.last_notification_time = datetime.now()
+                logger.info(f"📱 Telegram notification sent (next available in {self.cooldown_minutes} min)")
+            return success
+
         except Exception as e:
             logger.error(f"📱 Error creating signal notification: {e}")
             return False
@@ -519,7 +548,7 @@ Signal Sources:
                     'reason': enhanced.get('reason', '')
                 }
 
-                logger.info(f"💹 Current SUIUSDC Price: ${df['close'].iloc[-1]:.4f}")
+                logger.info(f"💹 Current {self.symbol} Price: ${df['close'].iloc[-1]:.4f}")
                 logger.info(f"🤖 RL Enhancement: {rl_signal_data['action']} (confidence: {rl_signal_data['confidence']:.1f}%)")
 
             except Exception as e:
@@ -1863,10 +1892,14 @@ def main():
     """
     try:
         logger.info("🤖 Initializing RL-Enhanced Trading Bot...")
-        
+
+        # Get trading symbol from environment variable (default to SUIUSDC for backward compatibility)
+        trading_symbol = os.getenv('TRADING_SYMBOL', 'SUIUSDC')
+        logger.info(f"📊 Trading Symbol: {trading_symbol}")
+
         # Create bot with much safer defaults
         bot = RLEnhancedBinanceFuturesBot(
-            symbol='SUIUSDC',
+            symbol=trading_symbol,
             leverage=50,
             position_percentage=2.0  # 2% instead of 51%!
         )
@@ -1908,16 +1941,19 @@ def show_status():
             from database import get_database
             db = get_database()
             print(f"Database: 🟢 CONNECTED")
-            
+
+            # Get trading symbol from environment
+            trading_symbol = os.getenv('TRADING_SYMBOL', 'SUIUSDC')
+
             # Get position info
-            open_trades = db.get_open_trades('SUIUSDC')
+            open_trades = db.get_open_trades(trading_symbol)
             print(f"Open Positions: {len(open_trades)}")
             
             for trade in open_trades:
                 # Get current price for PnL calculation
                 load_dotenv()
                 client = Client(os.getenv('BINANCE_API_KEY'), os.getenv('BINANCE_SECRET_KEY'))
-                ticker = client.get_symbol_ticker(symbol='SUIUSDC')
+                ticker = client.get_symbol_ticker(symbol=trading_symbol)
                 current_price = float(ticker['price'])
                 
                 if trade['side'] == 'SELL':
@@ -1929,7 +1965,7 @@ def show_status():
                 
                 # Get TP/SL prices from open orders
                 try:
-                    open_orders = client.futures_get_open_orders(symbol='SUIUSDC')
+                    open_orders = client.futures_get_open_orders(symbol=trading_symbol)
                     tp_price = None
                     sl_price = None
                     
@@ -2028,10 +2064,13 @@ def run_reconcile():
     """Run enhanced reconciliation standalone"""
     try:
         logger.info("🔄 Starting standalone enhanced reconciliation...")
-        
+
+        # Get trading symbol from environment
+        trading_symbol = os.getenv('TRADING_SYMBOL', 'SUIUSDC')
+
         # Initialize bot for reconciliation only
         bot = RLEnhancedBinanceFuturesBot(
-            symbol='SUIUSDC',
+            symbol=trading_symbol,
             leverage=50,
             position_percentage=2.0
         )

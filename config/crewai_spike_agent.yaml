@@ -317,7 +317,7 @@ crews:
 # LLM PROVIDER CONFIGURATION
 # ========================================
 llm:
-  provider: "openai"  # openai, anthropic, local
+  # provider: "openai"  # Commented out - will use LLM_PROVIDER env var instead
   model: "gpt-5-nano"  # Cost-effective model (67% cheaper than gpt-4o-mini)
   api_key_env: "OPENAI_API_KEY"
   temperature: 0.2

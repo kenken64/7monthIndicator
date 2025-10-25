@@ -84,12 +84,18 @@ class ChartAnalysisBot:
         
         self.binance_client = Client(self.binance_api_key, self.binance_secret_key)
         
-        # Initialize OpenAI API key
-        self.openai_api_key = os.getenv('OPENAI_API_KEY')
-        
-        if not self.openai_api_key:
-            logger.error("OpenAI API key not found in environment variables")
-            logger.info("Please add OPENAI_API_KEY to your .env file")
+        # Initialize LLM provider
+        try:
+            from llm_provider import get_llm_provider
+            self.llm_provider = get_llm_provider()
+            provider_name = os.getenv('LLM_PROVIDER', 'openai')
+            logger.info(f"🤖 Using {provider_name} LLM provider")
+
+            # Keep OpenAI API key for backward compatibility
+            self.openai_api_key = os.getenv('OPENAI_API_KEY')
+        except Exception as e:
+            logger.error(f"Failed to initialize LLM provider: {e}")
+            logger.info("Please check your LLM_PROVIDER and API key configuration")
             sys.exit(1)
         
         # Chart configuration
@@ -298,18 +304,18 @@ class ChartAnalysisBot:
     
     def analyze_chart_with_openai(self, chart_path: str, current_data: dict) -> dict:
         """
-        Send chart to OpenAI for AI-powered analysis
-        
+        Send chart to LLM provider for AI-powered analysis
+
         Args:
             chart_path: Path to chart image
             current_data: Current market data for context
-            
+
         Returns:
             dict: AI analysis with buy/sell recommendation
         """
         try:
-            logger.info("🤖 Sending chart to OpenAI for analysis...")
-            
+            logger.info("🤖 Sending chart to LLM provider for analysis...")
+
             # Encode image
             base64_image = self.encode_image_to_base64(chart_path)
             
@@ -361,69 +367,32 @@ Please provide a JSON response with this structure:
 }}
 
 Focus on SHORT-TERM trading opportunities (1-4 hour timeframe) and be specific with price levels."""
-            
-            # Prepare API request
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.openai_api_key}"
-            }
-            
-            payload = {
-                "model": "gpt-4o",  # GPT-5 vision returns empty responses, using GPT-4o for reliability
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": prompt
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{base64_image}",
-                                    "detail": "high"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                "max_tokens": 1500,
-                "temperature": 0.1
-            }
-            
-            # Send request to OpenAI
-            response = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60
+
+            # Prepare messages for LLM provider
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+
+            # Use LLM provider for vision analysis
+            result = self.llm_provider.chat_completion_with_vision(
+                messages=messages,
+                image_data=base64_image,
+                model=self.llm_provider.get_model_name("vision"),
+                temperature=0.1,
+                max_tokens=1500
             )
-            
-            if response.status_code != 200:
-                raise Exception(f"OpenAI API error: {response.status_code} - {response.text}")
-            
-            result = response.json()
 
-            # Log full response structure for debugging
-            logger.info(f"📊 Full API Response structure: {list(result.keys())}")
-            logger.info(f"📊 Choices: {len(result.get('choices', []))}")
-
-            if result.get('choices') and len(result['choices']) > 0:
-                message = result['choices'][0].get('message', {})
-                ai_response = message.get('content', '')
-                refusal = message.get('refusal', None)
-
-                logger.info(f"📊 Message keys: {list(message.keys())}")
-                logger.info(f"📊 Content length: {len(ai_response)} characters")
-
-                if refusal:
-                    logger.warning(f"⚠️ GPT-5 REFUSED to respond: {refusal}")
-
-                logger.info(f"📝 GPT-5 Raw Response (first 1000 chars): {ai_response[:1000]}")
-            else:
-                ai_response = ''
-                logger.error("❌ No choices in API response!")
+            ai_response = result['content']
+            logger.info(f"📊 Response length: {len(ai_response)} characters")
+            logger.info(f"📝 LLM Raw Response (first 1000 chars): {ai_response[:1000]}")
 
             # Try to extract JSON from response
             try:
@@ -564,11 +533,13 @@ def main():
     Runs continuous analysis every 15 minutes
     """
     try:
-        logger.info("🤖 Starting Chart Analysis Bot for SUI/USDC...")
+        # Get trading symbol from environment variable
+        trading_symbol = os.getenv('TRADING_SYMBOL', 'SUIUSDC')
+        logger.info(f"🤖 Starting Chart Analysis Bot for {trading_symbol}...")
         logger.info("⏰ Running analysis every 15 minutes...")
-        
+
         # Create bot instance
-        bot = ChartAnalysisBot(symbol='SUIUSDC')
+        bot = ChartAnalysisBot(symbol=trading_symbol)
         
         # Run initial analysis
         logger.info("🚀 Running initial analysis...")

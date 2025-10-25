@@ -71,20 +71,34 @@ class MarketSpikeAgentSystem:
             logger.error(f"Failed to load config: {e}")
             raise
 
-    def _init_llm(self) -> ChatOpenAI:
-        """Initialize Language Model"""
+    def _init_llm(self):
+        """Initialize Language Model with configurable provider"""
+        from langchain_deepseek import get_langchain_llm
+
         llm_config = self.config.get('llm', {})
         model = llm_config.get('model', 'gpt-4o-mini')
         temperature = llm_config.get('temperature', 0.2)
 
-        api_key = os.getenv('OPENAI_API_KEY')
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment variables")
+        # Get provider from config or environment
+        provider = llm_config.get('provider', os.getenv('LLM_PROVIDER', 'openai'))
 
-        return ChatOpenAI(
+        logger.info(f"Initializing CrewAI with {provider} provider (model: {model})")
+
+        # Map model names if using DeepSeek
+        if provider == 'deepseek':
+            # Map OpenAI model names to DeepSeek equivalents
+            model_mapping = {
+                'gpt-5-nano': 'deepseek-chat',
+                'gpt-4o': 'deepseek-chat',
+                'gpt-4o-mini': 'deepseek-chat',
+            }
+            model = model_mapping.get(model, 'deepseek-chat')
+            logger.info(f"Using DeepSeek model: {model}")
+
+        return get_langchain_llm(
+            provider=provider,
             model=model,
-            temperature=temperature,
-            openai_api_key=api_key
+            temperature=temperature
         )
 
     def _build_agents(self):

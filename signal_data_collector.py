@@ -115,8 +115,9 @@ class SignalDataCollector:
             try:
                 current_time = time.time()
 
-                # Collect market context
-                if current_time - self.last_collection['market_context'] >= self.intervals['market_context']:
+                # Collect market context (if enabled)
+                enable_market_context = os.getenv('ENABLE_MARKET_CONTEXT', 'true').lower() == 'true'
+                if enable_market_context and current_time - self.last_collection['market_context'] >= self.intervals['market_context']:
                     self._collect_market_context()
                     self.last_collection['market_context'] = current_time
 
@@ -125,8 +126,9 @@ class SignalDataCollector:
                     self._collect_crewai_signals()
                     self.last_collection['crewai'] = current_time
 
-                # Collect news sentiment
-                if current_time - self.last_collection['news_sentiment'] >= self.intervals['news_sentiment']:
+                # Collect news sentiment (if enabled)
+                enable_news_sentiment = os.getenv('ENABLE_NEWS_SENTIMENT', 'true').lower() == 'true'
+                if enable_news_sentiment and current_time - self.last_collection['news_sentiment'] >= self.intervals['news_sentiment']:
                     self._collect_news_sentiment()
                     self.last_collection['news_sentiment'] = current_time
 
@@ -189,8 +191,16 @@ class SignalDataCollector:
             # Save to file
             # Detect environment (Docker uses /app, native uses project root)
             base_path = '/app' if os.path.exists('/app') else '/root/7monthIndicator'
+
+            # Save to both /app (for local use) and shared directory (for web dashboard)
             with open(f'{base_path}/market_context.json', 'w') as f:
                 json.dump(market_data, f, indent=2)
+
+            # Also save to shared directory for cross-container access
+            shared_path = f'{base_path}/shared'
+            if os.path.exists(shared_path):
+                with open(f'{shared_path}/market_context.json', 'w') as f:
+                    json.dump(market_data, f, indent=2)
 
             logger.info(f"✅ Market context saved: BTC ${context.btc_price:.0f} ({context.btc_change_24h:+.1f}%), Trend: {context.market_trend}")
 
@@ -235,8 +245,16 @@ class SignalDataCollector:
             # Save to file
             # Detect environment (Docker uses /app, native uses project root)
             base_path = '/app' if os.path.exists('/app') else '/root/7monthIndicator'
+
+            # Save to both /app (for local use) and shared directory (for web dashboard)
             with open(f'{base_path}/crewai_analysis.json', 'w') as f:
                 json.dump(crewai_data, f, indent=2)
+
+            # Also save to shared directory for cross-container access
+            shared_path = f'{base_path}/shared'
+            if os.path.exists(shared_path):
+                with open(f'{shared_path}/crewai_analysis.json', 'w') as f:
+                    json.dump(crewai_data, f, indent=2)
 
             logger.info(f"✅ CrewAI signals saved: State={crewai_data['circuit_breaker']['state']}, Action={crewai_data['consensus']['action']}")
 
@@ -310,8 +328,15 @@ class SignalDataCollector:
                 sentiment_result = self.sentiment_analyzer.get_news_and_sentiment(count=20)
 
             # Save to file (sentiment_result already has all the necessary fields)
+            # Save to both /app (for local use) and shared directory (for web dashboard)
             with open(f'{base_path}/news_sentiment.json', 'w') as f:
                 json.dump(sentiment_result, f, indent=2)
+
+            # Also save to shared directory for cross-container access
+            shared_path = f'{base_path}/shared'
+            if os.path.exists(shared_path):
+                with open(f'{shared_path}/news_sentiment.json', 'w') as f:
+                    json.dump(sentiment_result, f, indent=2)
 
             logger.info(f"✅ News sentiment saved: {sentiment_result['sentiment']} (score: {sentiment_result.get('sentiment_score', 0):.2f}, confidence: {sentiment_result.get('confidence', 0):.0f}%, articles: {sentiment_result['article_count']})")
 

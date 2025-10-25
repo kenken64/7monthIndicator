@@ -99,19 +99,37 @@ class UnifiedSignalAggregator:
         confidences['crewai'] = crewai_conf
         logger.info(f"CrewAI Score: {crewai_score:.2f}/10 (confidence: {crewai_conf:.1f}%)")
 
-        # 5. Market Context & Cross-Asset
-        market_score, market_conf = self._score_market_context()
-        signals['market_context'] = self.last_market_context
-        scores['market_context'] = market_score
-        confidences['market_context'] = market_conf
-        logger.info(f"Market Context Score: {market_score:.2f}/10 (confidence: {market_conf:.1f}%)")
+        # 5. Market Context & Cross-Asset (if enabled)
+        enable_market_context = os.getenv('ENABLE_MARKET_CONTEXT', 'true').lower() == 'true'
+        if enable_market_context:
+            market_score, market_conf = self._score_market_context()
+            signals['market_context'] = self.last_market_context
+            scores['market_context'] = market_score
+            confidences['market_context'] = market_conf
+            logger.info(f"Market Context Score: {market_score:.2f}/10 (confidence: {market_conf:.1f}%)")
+        else:
+            # Neutral score when disabled
+            market_score, market_conf = 5.0, 0.0
+            signals['market_context'] = None
+            scores['market_context'] = market_score
+            confidences['market_context'] = market_conf
+            logger.info("Market Context: DISABLED")
 
-        # 6. News Sentiment
-        news_score, news_conf = self._score_news_sentiment(symbol)
-        signals['news_sentiment'] = self.last_news_sentiment
-        scores['news_sentiment'] = news_score
-        confidences['news_sentiment'] = news_conf
-        logger.info(f"News Sentiment Score: {news_score:.2f}/10 (confidence: {news_conf:.1f}%)")
+        # 6. News Sentiment (if enabled)
+        enable_news_sentiment = os.getenv('ENABLE_NEWS_SENTIMENT', 'true').lower() == 'true'
+        if enable_news_sentiment:
+            news_score, news_conf = self._score_news_sentiment(symbol)
+            signals['news_sentiment'] = self.last_news_sentiment
+            scores['news_sentiment'] = news_score
+            confidences['news_sentiment'] = news_conf
+            logger.info(f"News Sentiment Score: {news_score:.2f}/10 (confidence: {news_conf:.1f}%)")
+        else:
+            # Neutral score when disabled
+            news_score, news_conf = 5.0, 0.0
+            signals['news_sentiment'] = None
+            scores['news_sentiment'] = news_score
+            confidences['news_sentiment'] = news_conf
+            logger.info("News Sentiment: DISABLED")
 
         # Calculate weighted score
         weighted_score = sum(

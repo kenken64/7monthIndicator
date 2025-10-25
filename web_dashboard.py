@@ -46,32 +46,31 @@ if not os.getenv('NEWS_API_KEY'):
 
 def analyze_market_sentiment(news_titles):
     """
-    Analyze market sentiment using OpenAI or local analysis based on configuration
+    Analyze market sentiment using LLM provider or local analysis based on configuration
     """
     try:
         # Check if we should use local analysis (cost-saving mode)
         use_local_sentiment = os.getenv('USE_LOCAL_SENTIMENT', 'false').lower() == 'true'
-        
+
         if use_local_sentiment:
             from local_sentiment import LocalSentimentAnalyzer
             analyzer = LocalSentimentAnalyzer()
             result = analyzer.analyze_sentiment(news_titles)
             logger.info("Using local sentiment analysis (cost-saving mode)")
             return result
-        
-        openai_api_key = os.getenv('OPENAI_API_KEY')
-        if not openai_api_key:
-            logger.warning("OpenAI API key not found, skipping sentiment analysis")
-            return {
-                'sentiment': 'Unknown',
-                'confidence': 0,
-                'explanation': 'OpenAI API key not configured'
-            }
-        
-        # Prepare the prompt
-        titles_text = '\n'.join([f"- {title}" for title in news_titles[:20]])
-        
-        prompt = f"""Analyze the overall market sentiment for cryptocurrency based on these recent news headlines:
+
+        # Use LLM provider for sentiment analysis
+        try:
+            from llm_provider import get_llm_provider
+
+            provider = get_llm_provider()
+            provider_name = os.getenv('LLM_PROVIDER', 'openai')
+            logger.info(f"Using {provider_name} for sentiment analysis")
+
+            # Prepare the prompt
+            titles_text = '\n'.join([f"- {title}" for title in news_titles[:20]])
+
+            prompt = f"""Analyze the overall market sentiment for cryptocurrency based on these recent news headlines:
 
 {titles_text}
 
@@ -82,34 +81,23 @@ Please provide your analysis in JSON format with:
 
 Respond only with valid JSON."""
 
-        headers = {
-            "Authorization": f"Bearer {openai_api_key}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "model": "gpt-5-nano",  # 67% cheaper than gpt-4o-mini
-            "messages": [
+            messages = [
                 {
-                    "role": "user", 
+                    "role": "user",
                     "content": prompt
                 }
-            ],
-            "max_tokens": 150,  # Reduced from 300
-            "temperature": 0.1   # Lower temperature for consistent results
-        }
-        
-        response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            result = response.json()
-            ai_response = result['choices'][0]['message']['content']
-            
+            ]
+
+            result = provider.chat_completion(
+                messages=messages,
+                model=provider.get_model_name("fast"),
+                temperature=0.1,
+                max_tokens=150,
+                response_format={"type": "json_object"}
+            )
+
+            ai_response = result['content']
+
             # Try to extract JSON from response
             try:
                 # Find JSON in the response
@@ -131,12 +119,13 @@ Respond only with valid JSON."""
                     'confidence': 5,
                     'explanation': 'Failed to parse sentiment analysis'
                 }
-        else:
-            logger.error(f"OpenAI API error: {response.status_code}")
+
+        except Exception as llm_error:
+            logger.error(f"LLM provider error: {llm_error}")
             return {
                 'sentiment': 'Unknown',
                 'confidence': 0,
-                'explanation': 'API request failed'
+                'explanation': 'LLM provider error'
             }
             
     except Exception as e:
@@ -153,6 +142,10 @@ app.secret_key = 'trading_bot_secret_key'
 # Configure logging for web dashboard activities
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Get trading symbol from environment variable
+TRADING_SYMBOL = os.getenv('TRADING_SYMBOL', 'SUIUSDC')
+logger.info(f"📊 Web Dashboard Trading Symbol: {TRADING_SYMBOL}")
 
 # Global variable to track PIN failed attempts with rate limiting
 pin_attempts = {}
@@ -250,7 +243,12 @@ def dashboard():
     Serves the primary dashboard interface with real-time trading
     data, performance metrics, and system status.
     """
-    return render_template('dashboard.html')
+    provider_name = os.getenv('LLM_PROVIDER', 'openai').lower()
+    instance_id = os.getenv('INSTANCE_ID', '1')
+    return render_template('dashboard.html',
+                         llm_provider=provider_name,
+                         instance_id=instance_id,
+                         trading_symbol=TRADING_SYMBOL)
 
 @app.route('/health')
 def health():
@@ -1079,7 +1077,7 @@ def get_unified_signals(symbol):
             }
 
         # Load chart analysis
-        chart_file = 'shared/analysis_results_SUIUSDC.json'
+        chart_file = f'shared/analysis_results_{TRADING_SYMBOL}.json'
         if os.path.exists(chart_file):
             with open(chart_file, 'r') as f:
                 chart_data = json.load(f)
@@ -1123,7 +1121,8 @@ def get_unified_signals(symbol):
                 }
 
         # Load market context
-        context_file = 'market_context.json'
+        # Try shared directory first, then fall back to current directory
+        context_file = 'shared/market_context.json' if os.path.exists('shared/market_context.json') else 'market_context.json'
         if os.path.exists(context_file):
             with open(context_file, 'r') as f:
                 context_data = json.load(f)
@@ -1193,7 +1192,8 @@ def get_unified_signals(symbol):
                 }
 
         # Load CrewAI analysis
-        crewai_file = 'crewai_analysis.json'
+        # Try shared directory first, then fall back to current directory
+        crewai_file = 'shared/crewai_analysis.json' if os.path.exists('shared/crewai_analysis.json') else 'crewai_analysis.json'
         if os.path.exists(crewai_file):
             with open(crewai_file, 'r') as f:
                 crewai_data = json.load(f)
@@ -1233,7 +1233,8 @@ def get_unified_signals(symbol):
                 }
 
         # Load news sentiment
-        news_file = 'news_sentiment.json'
+        # Try shared directory first, then fall back to current directory
+        news_file = 'shared/news_sentiment.json' if os.path.exists('shared/news_sentiment.json') else 'news_sentiment.json'
         if os.path.exists(news_file):
             with open(news_file, 'r') as f:
                 news_data = json.load(f)
@@ -1787,13 +1788,15 @@ def get_connectivity_status():
 
     Tests connectivity to:
     - Binance API (futures account endpoint)
-    - OpenAI API (models list endpoint)
+    - LLM Provider API (OpenAI or DeepSeek based on environment)
 
     Returns:
         JSON response with connectivity status for each service
     """
     from binance.client import Client
-    import openai
+
+    # Determine which LLM provider to check
+    llm_provider = os.getenv('LLM_PROVIDER', 'openai').lower()
 
     status = {
         'binance': {'connected': False, 'error': None, 'latency_ms': None},
@@ -1818,30 +1821,61 @@ def get_connectivity_status():
     except Exception as e:
         status['binance']['error'] = str(e)[:100]  # Limit error message length
 
-    # Test OpenAI API
+    # Test LLM Provider API (OpenAI or DeepSeek)
     try:
-        openai_api_key = os.getenv('OPENAI_API_KEY')
+        if llm_provider == 'deepseek':
+            # Test DeepSeek API
+            deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
 
-        if openai_api_key:
-            start_time = time.time()
-            headers = {
-                "Authorization": f"Bearer {openai_api_key}",
-                "Content-Type": "application/json"
-            }
-            response = requests.get(
-                "https://api.openai.com/v1/models",
-                headers=headers,
-                timeout=5
-            )
-            latency = (time.time() - start_time) * 1000
+            if deepseek_api_key:
+                start_time = time.time()
+                headers = {
+                    "Authorization": f"Bearer {deepseek_api_key}",
+                    "Content-Type": "application/json"
+                }
+                response = requests.post(
+                    "https://api.deepseek.com/v1/chat/completions",
+                    headers=headers,
+                    json={
+                        "model": "deepseek-chat",
+                        "messages": [{"role": "user", "content": "test"}],
+                        "max_tokens": 5
+                    },
+                    timeout=5
+                )
+                latency = (time.time() - start_time) * 1000
 
-            if response.status_code == 200:
-                status['openai']['connected'] = True
-                status['openai']['latency_ms'] = round(latency, 2)
+                if response.status_code == 200:
+                    status['openai']['connected'] = True
+                    status['openai']['latency_ms'] = round(latency, 2)
+                else:
+                    status['openai']['error'] = f"HTTP {response.status_code}"
             else:
-                status['openai']['error'] = f"HTTP {response.status_code}"
+                status['openai']['error'] = 'API key not configured'
         else:
-            status['openai']['error'] = 'API key not configured'
+            # Test OpenAI API
+            openai_api_key = os.getenv('OPENAI_API_KEY')
+
+            if openai_api_key:
+                start_time = time.time()
+                headers = {
+                    "Authorization": f"Bearer {openai_api_key}",
+                    "Content-Type": "application/json"
+                }
+                response = requests.get(
+                    "https://api.openai.com/v1/models",
+                    headers=headers,
+                    timeout=5
+                )
+                latency = (time.time() - start_time) * 1000
+
+                if response.status_code == 200:
+                    status['openai']['connected'] = True
+                    status['openai']['latency_ms'] = round(latency, 2)
+                else:
+                    status['openai']['error'] = f"HTTP {response.status_code}"
+            else:
+                status['openai']['error'] = 'API key not configured'
     except Exception as e:
         status['openai']['error'] = str(e)[:100]  # Limit error message length
 
@@ -1885,7 +1919,7 @@ def get_rl_bot_status():
                 # Method 1: Docker environment - check database activity
                 # If bot is running, it should be writing signals regularly
                 db_temp = get_database()
-                recent_signals = db_temp.get_recent_signals(symbol='SUIUSDC', limit=1)
+                recent_signals = db_temp.get_recent_signals(symbol=TRADING_SYMBOL, limit=1)
                 if recent_signals:
                     latest_signal = recent_signals[0]
                     if 'timestamp' in latest_signal:
@@ -1964,7 +1998,7 @@ def get_rl_bot_status():
             indicators = decision.get('indicators', {})
             if indicators:
                 market_data = {
-                    'symbol': decision.get('symbol', 'SUIUSDC'),
+                    'symbol': decision.get('symbol', TRADING_SYMBOL),
                     'price': decision.get('price', 0),
                     'rsi': indicators.get('rsi', 0),
                     'vwap': indicators.get('vwap', 0),
@@ -1990,7 +2024,7 @@ def get_rl_bot_status():
                     WHERE symbol = ? AND status = 'OPEN'
                     ORDER BY timestamp DESC
                     LIMIT 1
-                ''', ('SUIUSDC',))
+                ''', (TRADING_SYMBOL,))
                 position = cursor.fetchone()
 
                 if position:
@@ -2135,13 +2169,13 @@ def get_chart_analysis():
     """API endpoint to get chart analysis data and recommendations"""
     try:
         # Read the chart analysis JSON file from shared directory
-        analysis_file = 'shared/analysis_results_SUIUSDC.json'
+        analysis_file = f'shared/analysis_results_{TRADING_SYMBOL}.json'
         if os.path.exists(analysis_file):
             with open(analysis_file, 'r') as f:
                 analysis_data = json.load(f)
 
             # Check if chart image exists in shared directory
-            chart_file = 'shared/chart_analysis_SUIUSDC.png'
+            chart_file = f'shared/chart_analysis_{TRADING_SYMBOL}.png'
             chart_exists = os.path.exists(chart_file)
             
             return jsonify({
@@ -2169,7 +2203,7 @@ def get_chart_image():
     """API endpoint to serve the chart analysis image"""
     try:
         from flask import send_file
-        chart_file = 'shared/chart_analysis_SUIUSDC.png'
+        chart_file = f'shared/chart_analysis_{TRADING_SYMBOL}.png'
         if os.path.exists(chart_file):
             return send_file(chart_file, mimetype='image/png')
         else:
@@ -2896,7 +2930,7 @@ def run_backtest():
         logger.info(f"🔒 Quick backtest authorized from IP: {client_ip}")
 
         # Extract parameters
-        symbol = data.get('symbol', 'SUIUSDC')
+        symbol = data.get('symbol', TRADING_SYMBOL)
         days_back = data.get('days_back', 30)
         initial_balance = data.get('initial_balance', 10000.0)
 
@@ -3016,7 +3050,7 @@ def run_backtest_optimization():
 
         logger.info(f"🔒 Weight optimization authorized from IP: {client_ip}")
 
-        symbol = data.get('symbol', 'SUIUSDC')
+        symbol = data.get('symbol', TRADING_SYMBOL)
         days_back = data.get('days_back', 30)
         initial_balance = data.get('initial_balance', 10000.0)
 
@@ -3178,7 +3212,7 @@ def get_backtest_insights():
         from datetime import datetime, timedelta
 
         # Run a quick backtest with current weights on shared database
-        symbol = 'SUIUSDC'
+        symbol = TRADING_SYMBOL
         db_path = 'data/trading_bot.db'
 
         # Get actual date range from database
@@ -3336,4 +3370,9 @@ def get_backtest_insights():
 if __name__ == '__main__':
     # Start Flask development server
     # Production deployments should use WSGI server like Gunicorn
-    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)
+    # Support configurable port for multi-instance deployment
+    port = int(os.getenv('FLASK_PORT', 5000))
+    instance_id = os.getenv('INSTANCE_ID', '1')
+
+    logger.info(f"Starting Web Dashboard - Instance {instance_id} on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
